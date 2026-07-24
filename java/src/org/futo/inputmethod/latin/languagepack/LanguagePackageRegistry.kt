@@ -399,11 +399,17 @@ class LanguagePackageRegistry private constructor(
                 .thenByDescending { semanticVersion(it.coordinate.componentVersion) }
 
         internal val componentPreferenceComparator =
-            compareByDescending<RegisteredLanguagePackageComponent> { it.component.priority }
-                .thenByDescending { semanticVersion(it.coordinate.componentVersion) }
-                .thenByDescending { semanticVersion(it.coordinate.packageVersion) }
-                .thenBy { it.coordinate.packageId }
-                .thenBy { it.coordinate.componentId }
+            compareByDescending<RegisteredLanguagePackageComponent> {
+                semanticVersion(it.coordinate.componentVersion)
+            }.thenByDescending {
+                semanticVersion(it.coordinate.packageVersion)
+            }.thenByDescending {
+                it.component.priority
+            }.thenBy {
+                it.coordinate.packageId
+            }.thenBy {
+                it.coordinate.componentId
+            }
     }
 }
 
