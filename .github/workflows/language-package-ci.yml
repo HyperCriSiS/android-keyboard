@@ -1,4 +1,4 @@
-name: Language package CI
+name: Language and personalization CI
 
 on:
   workflow_dispatch:
@@ -11,14 +11,17 @@ on:
       - "settings.gradle"
       - "gradle/**"
       - "java/src/org/futo/inputmethod/latin/languagepack/**"
+      - "java/src/org/futo/inputmethod/latin/personalization/**"
       - "java/src/org/futo/inputmethod/latin/uix/settings/SettingsNavigator.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageInspector.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageRegistry.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevSettings.kt"
       - "native/jni/**"
       - "tests/src/org/futo/inputmethod/latin/languagepack/**"
+      - "tests/src/org/futo/inputmethod/latin/personalization/**"
       - "tools/language-packages/**"
       - "docs/language-packages/**"
+      - "docs/personalization/**"
   pull_request:
     paths:
       - ".github/workflows/language-package-ci.yml"
@@ -26,20 +29,23 @@ on:
       - "settings.gradle"
       - "gradle/**"
       - "java/src/org/futo/inputmethod/latin/languagepack/**"
+      - "java/src/org/futo/inputmethod/latin/personalization/**"
       - "java/src/org/futo/inputmethod/latin/uix/settings/SettingsNavigator.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageInspector.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageRegistry.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevSettings.kt"
       - "native/jni/**"
       - "tests/src/org/futo/inputmethod/latin/languagepack/**"
+      - "tests/src/org/futo/inputmethod/latin/personalization/**"
       - "tools/language-packages/**"
       - "docs/language-packages/**"
+      - "docs/personalization/**"
 
 permissions:
   contents: read
 
 concurrency:
-  group: language-package-ci-${{ github.ref }}
+  group: language-personalization-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
