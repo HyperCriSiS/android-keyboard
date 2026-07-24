@@ -1,0 +1,520 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keyboard.futo.org/schemas/personalization/data-v0.1.schema.json",
+  "title": "FUTO Personalization Data 0.1",
+  "type": "object",
+  "required": [
+    "formatVersion",
+    "manualWords",
+    "learnedWords",
+    "learnedNgrams",
+    "wordRules",
+    "correctionRules",
+    "tombstones"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "0.1"
+    },
+    "manualWords": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/manualWord"
+      }
+    },
+    "learnedWords": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/learnedWord"
+      }
+    },
+    "learnedNgrams": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/learnedNgram"
+      }
+    },
+    "wordRules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/wordRule"
+      }
+    },
+    "correctionRules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/correctionRule"
+      }
+    },
+    "tombstones": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tombstone"
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "epochMillis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "languageTag": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 35,
+      "pattern": "^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$"
+    },
+    "word": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "baseRecordProperties": {
+      "type": "object",
+      "required": [
+        "id",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "$ref": "#/$defs/epochMillis"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/epochMillis"
+        },
+        "originDeviceId": {
+          "$ref": "#/$defs/uuid"
+        }
+      }
+    },
+    "manualWord": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseRecordProperties"
+        },
+        {
+          "type": "object",
+          "required": [
+            "word",
+            "frequency",
+            "source"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "createdAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "updatedAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "originDeviceId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "locale": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/languageTag"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "word": {
+              "$ref": "#/$defs/word"
+            },
+            "shortcut": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "frequency": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "source": {
+              "enum": [
+                "manual",
+                "imported",
+                "migrated-android-user-dictionary"
+              ]
+            }
+          },
+          "patternProperties": {
+            "^x-": true
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "learnedWord": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseRecordProperties"
+        },
+        {
+          "type": "object",
+          "required": [
+            "locale",
+            "word",
+            "observationCount",
+            "firstSeenAt",
+            "lastSeenAt",
+            "confidence",
+            "state",
+            "source"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "createdAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "updatedAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "originDeviceId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "locale": {
+              "$ref": "#/$defs/languageTag"
+            },
+            "word": {
+              "$ref": "#/$defs/word"
+            },
+            "observationCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "firstSeenAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "lastSeenAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "state": {
+              "enum": [
+                "active",
+                "suppressed"
+              ]
+            },
+            "source": {
+              "enum": [
+                "typing",
+                "manual-pick",
+                "autocorrect-undo",
+                "imported",
+                "migrated-user-history"
+              ]
+            }
+          },
+          "patternProperties": {
+            "^x-": true
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "learnedNgram": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseRecordProperties"
+        },
+        {
+          "type": "object",
+          "required": [
+            "locale",
+            "terms",
+            "observationCount",
+            "firstSeenAt",
+            "lastSeenAt",
+            "confidence",
+            "state",
+            "source"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "createdAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "updatedAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "originDeviceId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "locale": {
+              "$ref": "#/$defs/languageTag"
+            },
+            "terms": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 4,
+              "items": {
+                "$ref": "#/$defs/word"
+              }
+            },
+            "observationCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "firstSeenAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "lastSeenAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "state": {
+              "enum": [
+                "active",
+                "suppressed"
+              ]
+            },
+            "source": {
+              "enum": [
+                "typing",
+                "manual-pick",
+                "autocorrect-undo",
+                "imported",
+                "migrated-user-history"
+              ]
+            }
+          },
+          "patternProperties": {
+            "^x-": true
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "wordRule": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseRecordProperties"
+        },
+        {
+          "type": "object",
+          "required": [
+            "word",
+            "action"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "createdAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "updatedAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "originDeviceId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "locale": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/languageTag"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "word": {
+              "$ref": "#/$defs/word"
+            },
+            "action": {
+              "enum": [
+                "allow-learning",
+                "do-not-learn",
+                "pin"
+              ]
+            }
+          },
+          "patternProperties": {
+            "^x-": true
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "correctionRule": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseRecordProperties"
+        },
+        {
+          "type": "object",
+          "required": [
+            "typed",
+            "replacement",
+            "action"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "createdAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "updatedAt": {
+              "$ref": "#/$defs/epochMillis"
+            },
+            "originDeviceId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "locale": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/languageTag"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "typed": {
+              "$ref": "#/$defs/word"
+            },
+            "replacement": {
+              "$ref": "#/$defs/word"
+            },
+            "action": {
+              "enum": [
+                "allow",
+                "prefer",
+                "block-autocorrect",
+                "block-suggestion"
+              ]
+            },
+            "appScope": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "pattern": "^[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "patternProperties": {
+            "^x-": true
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "tombstone": {
+      "type": "object",
+      "required": [
+        "targetId",
+        "targetKind",
+        "revision",
+        "deletedAt",
+        "reason"
+      ],
+      "properties": {
+        "targetId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "targetKind": {
+          "enum": [
+            "manual-word",
+            "learned-word",
+            "learned-ngram",
+            "word-rule",
+            "correction-rule"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "deletedAt": {
+          "$ref": "#/$defs/epochMillis"
+        },
+        "reason": {
+          "enum": [
+            "user-delete",
+            "never-learn",
+            "retention-policy",
+            "merge-resolution",
+            "migration-rollback"
+          ]
+        },
+        "originDeviceId": {
+          "$ref": "#/$defs/uuid"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    }
+  }
+}
