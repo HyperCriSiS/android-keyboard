@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -196,7 +197,9 @@ private fun InspectionResult(inspected: InspectedLanguagePackage) {
                 style = Typography.Body.RegularMl,
             )
         } else {
-            manifest.components.forEach(::ComponentSurface)
+            manifest.components.forEach { component ->
+                ComponentSurface(component)
+            }
         }
     }
 
@@ -208,7 +211,9 @@ private fun InspectionResult(inspected: InspectedLanguagePackage) {
         )
         result.issues
             .sortedBy { if (it.severity == LanguagePackageValidationSeverity.Error) 0 else 1 }
-            .forEach(::IssueSurface)
+            .forEach { issue ->
+                IssueSurface(issue)
+            }
     }
 }
 
@@ -296,7 +301,11 @@ private fun StatusSurface(
 @Composable
 private fun PropertyRow(name: String, value: String) {
     Column {
-        Text(name, style = Typography.SmallMl, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            name,
+            style = Typography.SmallMl,
+            color = LocalContentColor.current.copy(alpha = 0.7f),
+        )
         Text(value, style = Typography.Body.RegularMl)
     }
 }
