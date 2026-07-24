@@ -17,6 +17,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LanguagePackageRegistryTest {
     private lateinit var root: File
+    private val createdPackages = mutableListOf<InstalledLanguagePackage>()
 
     @Before
     fun setUp() {
@@ -25,6 +26,7 @@ class LanguagePackageRegistryTest {
             "language-package-registry-${UUID.randomUUID()}",
         )
         assertTrue(root.mkdirs())
+        createdPackages.clear()
     }
 
     @After
@@ -205,8 +207,6 @@ class LanguagePackageRegistryTest {
         assertTrue(missingEvaluation.issues.any { it.code == "missing_dependency" })
     }
 
-    private val createdPackages = mutableListOf<InstalledLanguagePackage>()
-
     private fun installedPackages(): List<InstalledLanguagePackage> = createdPackages.toList()
 
     private fun installedPackage(
@@ -221,7 +221,8 @@ class LanguagePackageRegistryTest {
 
         components.forEach { component ->
             val payload = File(content, component.payload.path)
-            assertTrue(payload.parentFile?.mkdirs() != false)
+            val parent = requireNotNull(payload.parentFile)
+            assertTrue(parent.isDirectory || parent.mkdirs())
             payload.writeBytes(ByteArray(component.payload.sizeBytes.toInt()) { 1 })
         }
         val archive = File(directory, "package.futolanguage").apply { writeBytes(byteArrayOf(1)) }
