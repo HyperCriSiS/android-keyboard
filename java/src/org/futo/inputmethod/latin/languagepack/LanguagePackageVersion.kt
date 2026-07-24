@@ -104,19 +104,27 @@ class LanguagePackageVersionRange private constructor(
                     token.startsWith('^') -> {
                         val lower = LanguagePackageSemanticVersion.parse(token.drop(1)) ?: return null
                         val upper = when {
-                            lower.major > 0 -> LanguagePackageSemanticVersion(lower.major + 1, 0, 0)
-                            lower.minor > 0 -> LanguagePackageSemanticVersion(0, lower.minor + 1, 0)
-                            else -> LanguagePackageSemanticVersion(0, 0, lower.patch + 1)
+                            lower.major > 0 && lower.major < Int.MAX_VALUE -> {
+                                LanguagePackageSemanticVersion(lower.major + 1, 0, 0)
+                            }
+                            lower.major == 0 && lower.minor > 0 && lower.minor < Int.MAX_VALUE -> {
+                                LanguagePackageSemanticVersion(0, lower.minor + 1, 0)
+                            }
+                            lower.major == 0 && lower.minor == 0 && lower.patch < Int.MAX_VALUE -> {
+                                LanguagePackageSemanticVersion(0, 0, lower.patch + 1)
+                            }
+                            else -> return null
                         }
-                        predicates += { it >= lower }
-                        predicates += { it < upper }
+                        predicates += { candidate: LanguagePackageSemanticVersion -> candidate >= lower }
+                        predicates += { candidate: LanguagePackageSemanticVersion -> candidate < upper }
                     }
 
                     token.startsWith('~') -> {
                         val lower = LanguagePackageSemanticVersion.parse(token.drop(1)) ?: return null
+                        if (lower.minor == Int.MAX_VALUE) return null
                         val upper = LanguagePackageSemanticVersion(lower.major, lower.minor + 1, 0)
-                        predicates += { it >= lower }
-                        predicates += { it < upper }
+                        predicates += { candidate: LanguagePackageSemanticVersion -> candidate >= lower }
+                        predicates += { candidate: LanguagePackageSemanticVersion -> candidate < upper }
                     }
 
                     else -> {
@@ -135,7 +143,7 @@ class LanguagePackageVersionRange private constructor(
                             token.drop(operator.length)
                         }
                         val version = LanguagePackageSemanticVersion.parse(rawVersion) ?: return null
-                        predicates += when (operator) {
+                        val predicate: (LanguagePackageSemanticVersion) -> Boolean = when (operator) {
                             ">=" -> { candidate -> candidate >= version }
                             "<=" -> { candidate -> candidate <= version }
                             ">" -> { candidate -> candidate > version }
@@ -143,6 +151,7 @@ class LanguagePackageVersionRange private constructor(
                             "=", "==" -> { candidate -> candidate.compareTo(version) == 0 }
                             else -> return null
                         }
+                        predicates += predicate
                     }
                 }
             }
