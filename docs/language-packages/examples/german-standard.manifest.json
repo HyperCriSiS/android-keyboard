@@ -111,6 +111,19 @@
           "gguf-causal-lm-v1"
         ]
       },
+      "runtime": {
+        "id": "gguf-causal-ranker",
+        "apiVersion": 1,
+        "parameters": {
+          "boundaryMode": "leading-separator",
+          "maxContextTokens": 256,
+          "maxBatchSize": 16,
+          "supportsRightContext": true,
+          "bosPolicy": "model-default",
+          "addEos": false,
+          "contextTruncation": "keep-last"
+        }
+      },
       "payload": {
         "path": "components/ranker.gguf",
         "mediaType": "application/vnd.futo.keyboard.model+gguf",
