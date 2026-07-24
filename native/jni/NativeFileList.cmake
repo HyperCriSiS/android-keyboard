@@ -12,6 +12,7 @@ set(LATIN_IME_JNI_SRC_FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_BinaryDictionaryUtils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_DicTraverseSession.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_xlm_LanguageModel.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_languagepack_ranker_GgufCandidateRankerNativeBridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_xlm_AdapterTrainer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_xlm_ModelInfoLoader.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_voiceinput_WhisperGGML.cpp
