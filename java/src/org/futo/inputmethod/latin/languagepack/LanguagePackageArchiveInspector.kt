@@ -18,6 +18,7 @@ data class LanguagePackageArchiveLimits(
     val maxManifestBytes: Long = 2L * 1024L * 1024L,
     val maxEntryBytes: Long = 1024L * 1024L * 1024L,
     val maxTotalBytes: Long = 4L * 1024L * 1024L * 1024L,
+    val maxCompressionRatio: Double = 200.0,
 )
 
 data class LanguagePackageArchiveEntryInfo(
@@ -70,10 +71,15 @@ object LanguagePackageArchiveInspector {
             )
         }
 
-        if (limits.maxEntryCount < 1 || limits.maxManifestBytes < 1L ||
-            limits.maxEntryBytes < 1L || limits.maxTotalBytes < 1L
+        if (
+            limits.maxEntryCount < 1 ||
+            limits.maxManifestBytes < 1L ||
+            limits.maxEntryBytes < 1L ||
+            limits.maxTotalBytes < 1L ||
+            !limits.maxCompressionRatio.isFinite() ||
+            limits.maxCompressionRatio <= 0.0
         ) {
-            error("invalid_archive_limits", "archive", "Archive inspection limits must be positive.")
+            error("invalid_archive_limits", "archive", "Archive inspection limits must be positive and finite.")
             return LanguagePackageInspectionResult(null, emptyMap(), issues)
         }
 
@@ -90,25 +96,28 @@ object LanguagePackageArchiveInspector {
                         "archive",
                         "Archive contains more than ${limits.maxEntryCount} entries.",
                     )
-                    break
+                    return LanguagePackageInspectionResult(null, entries, issues)
                 }
 
-                val path = zipEntry.name
-                val safePath = validateAndCanonicalizeArchivePath(path)
+                val originalPath = zipEntry.name
+                val safePath = validateAndCanonicalizeArchivePath(originalPath)
                 if (safePath == null) {
-                    error("unsafe_archive_path", path, "Archive entry path is unsafe or not normalized.")
-                    drainEntry(zip, buffer, limits.maxEntryBytes)
-                    zip.closeEntry()
-                    continue
+                    error(
+                        "unsafe_archive_path",
+                        originalPath,
+                        "Archive entry path is unsafe or not normalized.",
+                    )
+                    return LanguagePackageInspectionResult(null, entries, issues)
                 }
 
-                val previousPath = canonicalPaths.put(safePath.canonicalKey, path)
+                val previousPath = canonicalPaths.put(safePath.canonicalKey, originalPath)
                 if (previousPath != null) {
                     error(
                         "duplicate_archive_path",
-                        path,
+                        originalPath,
                         "Archive path collides with '$previousPath' after normalization.",
                     )
+                    return LanguagePackageInspectionResult(null, entries, issues)
                 }
 
                 if (zipEntry.isDirectory) {
@@ -123,7 +132,6 @@ object LanguagePackageArchiveInspector {
                     null
                 }
                 var entryBytes = 0L
-                var entryTooLarge = false
 
                 while (true) {
                     val read = zip.read(buffer)
@@ -134,14 +142,12 @@ object LanguagePackageArchiveInspector {
                     totalBytes += read
 
                     if (entryBytes > limits.maxEntryBytes) {
-                        if (!entryTooLarge) {
-                            error(
-                                "archive_entry_too_large",
-                                path,
-                                "Archive entry exceeds ${limits.maxEntryBytes} bytes.",
-                            )
-                            entryTooLarge = true
-                        }
+                        error(
+                            "archive_entry_too_large",
+                            originalPath,
+                            "Archive entry exceeds ${limits.maxEntryBytes} bytes.",
+                        )
+                        return LanguagePackageInspectionResult(null, entries, issues)
                     }
                     if (totalBytes > limits.maxTotalBytes) {
                         error(
@@ -151,22 +157,33 @@ object LanguagePackageArchiveInspector {
                         )
                         return LanguagePackageInspectionResult(null, entries, issues)
                     }
+                    if (manifestOutput != null && entryBytes > limits.maxManifestBytes) {
+                        error(
+                            "manifest_too_large",
+                            LANGUAGE_PACKAGE_MANIFEST_PATH,
+                            "Manifest exceeds ${limits.maxManifestBytes} bytes.",
+                        )
+                        return LanguagePackageInspectionResult(null, entries, issues)
+                    }
 
                     digest.update(buffer, 0, read)
-                    if (manifestOutput != null) {
-                        if (entryBytes <= limits.maxManifestBytes) {
-                            manifestOutput.write(buffer, 0, read)
-                        } else if (entryBytes - read <= limits.maxManifestBytes) {
-                            error(
-                                "manifest_too_large",
-                                LANGUAGE_PACKAGE_MANIFEST_PATH,
-                                "Manifest exceeds ${limits.maxManifestBytes} bytes.",
-                            )
-                        }
-                    }
+                    manifestOutput?.write(buffer, 0, read)
                 }
 
                 zip.closeEntry()
+
+                val compressedSize = zipEntry.compressedSize
+                if (
+                    compressedSize > 0L &&
+                    entryBytes.toDouble() / compressedSize.toDouble() > limits.maxCompressionRatio
+                ) {
+                    error(
+                        "archive_compression_ratio_exceeded",
+                        originalPath,
+                        "Archive entry exceeds the allowed compression ratio.",
+                    )
+                    return LanguagePackageInspectionResult(null, entries, issues)
+                }
 
                 val info = LanguagePackageArchiveEntryInfo(
                     path = safePath.normalized,
@@ -175,27 +192,25 @@ object LanguagePackageArchiveInspector {
                 )
                 entries[safePath.normalized] = info
 
-                if (manifestOutput != null && entryBytes <= limits.maxManifestBytes) {
-                    if (manifestBytes != null) {
-                        error(
-                            "duplicate_manifest",
-                            LANGUAGE_PACKAGE_MANIFEST_PATH,
-                            "Archive contains more than one manifest entry.",
-                        )
-                    } else {
-                        manifestBytes = manifestOutput.toByteArray()
-                    }
+                if (manifestOutput != null) {
+                    manifestBytes = manifestOutput.toByteArray()
                 }
             }
         } catch (exception: ZipException) {
             error("invalid_zip", "archive", exception.message ?: "Archive is not a valid ZIP file.")
-        } catch (exception: RuntimeException) {
+            return LanguagePackageInspectionResult(null, entries, issues)
+        } catch (exception: Exception) {
             error("archive_read_failed", "archive", exception.message ?: exception.javaClass.simpleName)
+            return LanguagePackageInspectionResult(null, entries, issues)
         }
 
         val rawManifest = manifestBytes
         if (rawManifest == null) {
-            error("missing_manifest", LANGUAGE_PACKAGE_MANIFEST_PATH, "Archive does not contain a readable root manifest.")
+            error(
+                "missing_manifest",
+                LANGUAGE_PACKAGE_MANIFEST_PATH,
+                "Archive does not contain a readable root manifest.",
+            )
             return LanguagePackageInspectionResult(null, entries, issues)
         }
 
@@ -325,17 +340,6 @@ object LanguagePackageArchiveInspector {
             normalized = normalized,
             canonicalKey = normalized.lowercase(Locale.ROOT),
         )
-    }
-
-    private fun drainEntry(zip: ZipInputStream, buffer: ByteArray, maximumBytes: Long) {
-        var drained = 0L
-        while (true) {
-            val read = zip.read(buffer)
-            if (read == -1) return
-            if (read == 0) continue
-            drained += read
-            if (drained > maximumBytes) return
-        }
     }
 
     private fun decodeUtf8Strict(bytes: ByteArray): String = Charsets.UTF_8
