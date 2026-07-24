@@ -4,32 +4,41 @@
 **Format version:** `0.1`  
 **Archive extension:** `.futolanguage`
 
-This document defines the first portable package format for language resources used by FUTO Keyboard and by the FUTO Keyboard Model Studio.
+This specification defines a portable and modular format for language resources used by FUTO Keyboard and by the future FUTO Keyboard Model Studio.
 
-The format is deliberately modular. A package may provide a complete recommended configuration, a single reusable component, or only a profile that combines components from other installed packages.
+A package may provide:
 
-## Goals
+- a complete recommended language setup;
+- one reusable component;
+- one or more profiles combining components from multiple installed packages.
+
+Installation and activation are separate operations. Importing a package never silently changes typing behavior.
+
+## Design goals
 
 - Install a complete language setup with one file.
-- Allow components from multiple packages to be combined.
-- Keep dictionaries and rule sets stackable.
-- Make model conflicts explicit instead of silently choosing one.
-- Permit deterministic validation before importing or activating anything.
-- Keep projects and model-building tools independent from the Android runtime.
-- Remain forward-compatible through versioned manifests and capabilities.
+- Combine components from several packages.
+- Keep dictionaries, rules, and small adapters stackable.
+- Keep large runtime slots exclusive by default.
+- Make conflicts and incompatibilities explicit.
+- Preserve exact user selections across package updates.
+- Validate archives deterministically before installation.
+- Permit existing standard GGUF models to be wrapped without modifying their weights.
+- Share contracts between Android, Model Studio, CI, and community tooling.
+- Remain forward-compatible through versioned manifests, tasks, capabilities, and runtime adapters.
 
-## Non-goals for version 0.1
+## Non-goals for format `0.1`
 
-- Executing arbitrary code from a package.
-- Downloading dependencies during package import.
-- Defining the final public package repository protocol.
-- Defining model-training recipes.
-- Allowing multiple large neural models to run for the same task by default.
-- Replacing the existing legacy dictionary format immediately.
+- Executing arbitrary package code.
+- Downloading dependencies while importing a local package.
+- Automatically activating every installed component.
+- Running multiple large models for the same task by default.
+- Replacing every existing legacy dictionary/model path immediately.
+- Defining the final public repository and trust protocol.
 
 ## Archive layout
 
-A language package is a ZIP archive using UTF-8 file names and `/` as the path separator.
+A language package is a ZIP archive using UTF-8 file names and `/` separators.
 
 ```text
 GermanStandard.futolanguage
@@ -46,132 +55,134 @@ GermanStandard.futolanguage
     └── package.sig
 ```
 
-`manifest.json` MUST be located at the archive root.
+`manifest.json` must be located at the archive root.
 
-Archives MUST NOT contain:
+Archives must not contain:
 
 - absolute paths;
-- `..` path traversal;
-- symbolic links;
+- path traversal;
 - duplicate normalized paths;
 - encrypted entries;
-- executable code that is loaded or run during import.
+- executable package code;
+- links restored from ZIP metadata.
 
-Importers MUST apply configurable limits for total uncompressed size, entry count, individual entry size, and compression ratio.
+Importers enforce configurable limits for compressed size, expanded size, entry count, individual entry size, manifest size, and compression ratio.
 
-## Package identity
+## Package identity and versions
 
-Package and component identifiers use reverse-domain notation:
+Package IDs use reverse-domain notation:
 
 ```text
 org.example.german.standard
-org.example.german.ranker
 ```
 
-Identifiers are stable. Renaming a package creates a different package.
+Every component has a local ID and its own semantic version. Package and component versions are independent.
 
-Versions use semantic versioning. Package versions and component versions are independent because a bundle may update metadata without changing every included component.
+An immutable installed component coordinate is:
+
+```text
+<package-id>@<package-version>:<component-id>@<component-version>
+```
+
+Multiple package versions may be installed side by side.
 
 ## Package kinds
 
-A manifest declares one of three package kinds:
-
 ### `bundle`
 
-Contains multiple components and one or more recommended profiles. This is the normal one-click installation format.
+Contains several components and normally one or more profiles. This is the standard one-click distribution format.
 
 ### `component`
 
-Primarily distributes one reusable component, such as a dictionary or ranker. It may still contain supporting files and profiles.
+Primarily distributes one reusable component, such as a dictionary or ranker.
 
 ### `profile`
 
-Contains configuration only. It combines components already installed from other packages.
+Contains configuration only and combines components already installed from other packages.
 
 ## Component kinds
 
-Version 0.1 defines these component kinds:
-
-| Kind | Default cardinality | Purpose |
-|---|---:|---|
-| `dictionary` | stackable | Words, frequencies, shortcuts, names, or domain vocabulary |
-| `language-rules` | stackable | Locale-specific capitalization, splitting, compounding, filtering, and punctuation rules |
+| Kind | Activation | Purpose |
+|---|---|---|
+| `dictionary` | stackable | Words, frequencies, shortcuts, names, or specialist vocabulary |
+| `language-rules` | stackable | Capitalization, splitting, compounding, filtering, and punctuation rules |
 | `candidate-generator` | exclusive | Produces correction candidates from typed input |
 | `context-ranker` | exclusive | Scores complete candidates using context |
-| `correction-model` | exclusive | Native keyboard model that may use touch geometry and generate corrections |
+| `correction-model` | exclusive | Keyboard-native correction model, optionally using touch geometry |
 | `swipe-model` | exclusive | Gesture typing decoder |
-| `personalization-adapter` | stackable | Optional small adapter or local preference layer |
+| `personalization-adapter` | stackable | Small preference, domain, dialect, or local-learning layer |
 
-`stackable` means multiple active components may contribute to the same slot.  
-`exclusive` means only one component may be active in that slot unless an explicitly supported ensemble mode is introduced later.
-
-A manifest records the activation mode so custom component kinds can be handled safely.
+Stackable components are not activated merely because they are installed.
 
 ## Tasks and capabilities
 
-A component declares one or more tasks, for example:
+Tasks describe callable contracts:
 
+- `dictionary-lookup-v1`
 - `candidate-ranking-v1`
-- `next-word-prediction-v1`
 - `tap-correction-v1`
 - `swipe-decoding-v1`
-- `dictionary-lookup-v1`
 - `german-compounding-v1`
 
-Tasks describe the callable contract. Capabilities describe optional behavior, such as:
+Capabilities describe required or optional behavior:
 
 - `unicode-graphemes`
-- `qwertz`
-- `touch-coordinates`
 - `full-candidate-logprob`
+- `touch-coordinates`
+- `word-frequency`
 - `offline-only`
 
 Unknown required tasks or capabilities make a component unavailable. Unknown optional capabilities may be ignored.
 
+## Runtime bindings
+
+A component may select a declarative runtime adapter outside its payload:
+
+```json
+{
+  "runtime": {
+    "id": "gguf-causal-ranker",
+    "apiVersion": 1,
+    "parameters": {
+      "boundaryMode": "leading-separator",
+      "maxContextTokens": 256,
+      "maxBatchSize": 16,
+      "supportsRightContext": true,
+      "bosPolicy": "model-default",
+      "addEos": false,
+      "contextTruncation": "keep-last"
+    }
+  }
+}
+```
+
+This allows Model Studio to package an unchanged standard GGUF and describe how FUTO should use it.
+
+Runtime providers are registered by stable ID and supported API-version range. Adapter-specific parameters are strictly validated by that provider.
+
 ## Profiles
 
-Profiles provide a named configuration such as:
+Profiles provide named configurations such as:
 
 - Standard
 - Fast
 - Maximum accuracy
 - Low memory
 
-A profile selection targets a component slot and uses one of two strategies:
+A profile selection targets a component slot and uses:
 
-- `replace`: use the listed component for an exclusive slot or replace the inherited stack;
-- `append`: add listed components to a stackable slot.
+- `replace` — replace the inherited selection;
+- `append` — add components to a stackable selection.
 
-Component references may point to:
-
-- a component inside the same package;
-- a component in another installed package;
-- a compatible component selected automatically when the reference is optional.
+References may target components inside the same package or components from another installed package.
 
 Profiles are recommendations, not permanent user state.
 
-## Resolution and user overrides
+## Reference resolution
 
-The keyboard resolves active components in this order, highest priority first:
+An internal reference omits `packageId` and remains inside the exact owning package version.
 
-1. explicit user selection;
-2. the user's saved custom profile;
-3. selected package profile;
-4. package recommendation;
-5. automatic compatibility selection;
-6. built-in fallback.
-
-An explicit user selection MUST NOT be replaced by a package update.
-
-For stackable slots, the resolver merges components in ascending `priority` order and applies user-level sources last. Duplicate words or rules retain their source information so conflicts remain inspectable.
-
-For exclusive slots, the resolver activates exactly one compatible component. If several equally preferred candidates remain, the UI MUST ask the user or use a documented deterministic tie-breaker. It MUST NOT silently switch between models.
-
-## Component references
-
-An internal reference contains only `componentId`.
-
-An external reference additionally contains `packageId` and may contain a semantic `versionRange`.
+An external reference declares `packageId` and may include a component-version range:
 
 ```json
 {
@@ -183,113 +194,162 @@ An external reference additionally contains `packageId` and may contain a semant
 }
 ```
 
-A required missing reference makes the profile unavailable, but does not make unrelated components in the package unusable.
+Supported range forms include exact versions, comparator sets, caret ranges, tilde ranges, and `*`.
+
+Resolution is deterministic and documented in:
+
+```text
+docs/language-packages/RESOLUTION.md
+```
+
+## Selection precedence
+
+The inactive resolver applies:
+
+1. explicit user override;
+2. selected custom or package profile;
+3. deterministic automatic selection;
+4. built-in keyboard fallback outside the package resolver.
+
+An explicit user selection must not be replaced by a package update.
+
+Required dependency closure is added to the plan. A disabled dependency slot or a conflicting exclusive dependency makes the plan invalid.
+
+## Candidate ranker
+
+The first model runtime contract scores complete candidate sequences rather than only the first candidate token.
+
+It supports:
+
+- exact left context;
+- exact candidate replacement text;
+- optional bounded right context;
+- complete token log-probability sums;
+- candidate and right-context token counts;
+- prefix KV-cache reuse;
+- deterministic batching and diagnostics;
+- standard GGUF tokenizers;
+- legacy external SentencePiece tokenizers.
+
+The contract and experimental generic GGUF adapter are documented in:
+
+```text
+docs/language-packages/CANDIDATE_RANKER.md
+```
+
+## Benchmark and fusion
+
+Suggestion ranking and automatic correction are evaluated separately.
+
+The benchmark records:
+
+- candidate coverage;
+- Top-1 and Top-3 accuracy;
+- mean reciprocal rank;
+- false-correction rate;
+- correct, wrong, and missed autocorrection rates;
+- p50 and p95 latency.
+
+The first transparent fusion harness keeps every signal contribution visible and applies separate confidence, margin, risk, blocked-word, and offensive-word protections before autocorrect.
+
+The format is documented in:
+
+```text
+docs/language-packages/BENCHMARK.md
+```
 
 ## Integrity
 
-Every component payload MUST declare:
+Every payload declares:
 
-- relative archive path;
+- safe relative archive path;
 - media type;
 - SHA-256 digest;
 - uncompressed byte size.
 
-The importer verifies these fields before making a component available.
+The importer validates payloads before installation and revalidates extracted bytes.
 
-Package signing is intentionally separated from component hashes. Version 0.1 reserves `signatures/` for detached signatures. The exact trust-store and signature envelope are defined in a later security specification; an importer MUST NOT claim a package is trusted merely because a signature file exists.
+Package signatures are separate from payload hashes. A signature file must never be treated as trusted until a later trust-store specification validates it.
 
 ## Compatibility
 
 A component may declare:
 
 - minimum and maximum keyboard API;
-- supported Android ABIs;
+- Android ABIs;
 - minimum RAM;
-- supported locales;
-- supported layouts;
-- tokenizer requirements;
-- runtime features.
+- languages and layouts;
+- tasks and capabilities;
+- required runtime features;
+- component dependencies.
 
-Incompatible components may remain installed but cannot be activated.
+Components are evaluated independently. One incompatible optional model must not prevent usable dictionaries or rules from the same package from being installed.
 
-Compatibility is checked independently for every component. One incompatible optional model must not prevent dictionaries or rules from the same package from being imported.
-
-## Media types
-
-Recommended initial media types:
-
-| Payload | Media type |
-|---|---|
-| GGUF model | `application/vnd.futo.keyboard.model+gguf` |
-| FUTO binary dictionary | `application/vnd.futo.keyboard.dictionary` |
-| Language rules | `application/vnd.futo.keyboard.rules+json` |
-| Benchmark results | `application/vnd.futo.keyboard.benchmark+json` |
-
-Unknown media types are preserved but not activated unless a compatible runtime is installed.
-
-## Validation stages
-
-Importers perform validation in this order:
+## Validation and installation stages
 
 1. archive safety and resource limits;
-2. `manifest.json` JSON parsing;
+2. strict UTF-8 and JSON parsing;
 3. JSON Schema validation;
-4. semantic validation;
-5. component digest and size validation;
-6. runtime compatibility checks;
-7. component-specific probe or self-test;
-8. atomic installation.
+4. semantic manifest validation;
+5. digest and size validation;
+6. staging inside app-private storage;
+7. declared-file extraction only;
+8. extracted-byte revalidation;
+9. atomic side-by-side installation;
+10. independent runtime compatibility and probe checks;
+11. inactive resolution planning;
+12. explicit activation in a later production layer.
 
-A failed package import must not modify the active configuration.
+A failed operation must not modify the active keyboard configuration.
 
-## Updates and rollback
+## Immutable store
 
-Package updates are installed side by side. Activation changes only after all required files pass validation.
+Installed packages are stored side by side by package ID and package version.
 
-The package manager retains enough metadata to:
+Identical repeated imports are idempotent. Different bytes under the same ID and version produce a conflict.
 
-- roll back to the previous package version;
-- keep project-pinned component versions;
-- distinguish installed, active, and recommended versions;
-- avoid replacing a user-selected component.
-
-## File ownership
-
-Imported package files are immutable. Runtime-generated data such as personal learning, caches, benchmarks, or converted models is stored outside the imported package directory.
-
-This permits reliable hash verification and clean removal.
-
-## Manifest schema
-
-The normative machine-readable schema is:
-
-```text
-docs/language-packages/schema/manifest-v0.1.schema.json
-```
-
-The schema validates structure. The keyboard and Model Studio MUST also perform semantic checks that JSON Schema cannot express, including:
-
-- unique component IDs;
-- valid internal references;
-- exclusive slot selections containing at most one component;
-- component kind and profile slot agreement;
-- safe normalized archive paths;
-- task and runtime compatibility;
-- digest and actual file size agreement.
+Runtime-generated caches, personal learning, calibration data, and benchmark output stay outside immutable package directories.
 
 ## Forward compatibility
 
 Unknown fields are accepted only when prefixed with `x-`.
 
-A future incompatible format increments `formatVersion`. New optional fields may be introduced without changing the major format version when old readers can safely ignore them.
+A future incompatible format increments `formatVersion`. Adapter behavior evolves through runtime API versions rather than ambiguous interpretation of old parameters.
 
-## Initial implementation milestones
+## Normative and supporting files
 
-1. Manifest schema and Kotlin data model.
-2. Pure semantic validator with no Android UI dependency.
-3. Safe archive reader and package inspection screen.
-4. Debug-only package import.
-5. Full component resolver.
-6. Candidate-ranker runtime contract.
-7. Model Studio package builder and validator.
-8. Public package signing and repository protocol.
+```text
+docs/language-packages/schema/manifest-v0.1.schema.json
+docs/language-packages/RESOLUTION.md
+docs/language-packages/CANDIDATE_RANKER.md
+docs/language-packages/BENCHMARK.md
+docs/language-packages/DEVELOPMENT.md
+docs/language-packages/examples/german-standard.manifest.json
+docs/language-packages/examples/german-correction-benchmark.json
+```
+
+## Current implementation milestones
+
+Completed on the development branch:
+
+1. manifest schema and Kotlin model;
+2. strict codec and semantic validation;
+3. safe archive inspection;
+4. immutable atomic package store;
+5. component registry and deterministic resolver;
+6. candidate-ranker contract and provider registry;
+7. standard-GGUF tokenizer support;
+8. experimental complete-sequence native GGUF scorer;
+9. debug package, registry, probe, and sample-score screens;
+10. transparent experimental fusion and correction benchmark contracts.
+
+Next:
+
+1. full Gradle/NDK and device verification;
+2. suite runner and model calibration;
+3. candidate extraction from the existing suggestion pipeline;
+4. offline comparison against the current FUTO algorithm;
+5. guarded shadow-mode integration without changing output;
+6. production score fusion and persisted per-language selection;
+7. Model Studio package, conversion, training, and benchmark UI;
+8. signing and public repository protocol.
