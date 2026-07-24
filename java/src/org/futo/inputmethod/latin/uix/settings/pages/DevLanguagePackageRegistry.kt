@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalContentColor
@@ -65,7 +64,7 @@ import org.futo.inputmethod.latin.uix.settings.ScrollableList
 import org.futo.inputmethod.latin.uix.settings.Tip
 import org.futo.inputmethod.latin.uix.theme.Typography
 
-private data class LanguagePackageRegistrySnapshot(
+private data class RegistrySnapshot(
     val registry: LanguagePackageRegistry,
     val plan: LanguagePackageResolutionPlan,
     val environment: LanguagePackageRuntimeEnvironment,
@@ -86,13 +85,13 @@ fun DevLanguagePackageRegistryScreen(
     }
     val providers = remember { createDefaultCandidateRankerProviderRegistry() }
     val scope = rememberCoroutineScope()
-    var revision by remember { mutableIntStateOf(0) }
-    var snapshot by remember { mutableStateOf<LanguagePackageRegistrySnapshot?>(null) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(true) }
     val rankerResults = remember {
         mutableStateMapOf<LanguagePackageComponentCoordinate, RankerDebugResult>()
     }
+    var revision by remember { mutableIntStateOf(0) }
+    var snapshot by remember { mutableStateOf<RegistrySnapshot?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(revision) {
         loading = true
@@ -101,13 +100,16 @@ fun DevLanguagePackageRegistryScreen(
             withContext(Dispatchers.IO) {
                 val registry = store.buildRegistry()
                 val environment = runtimeEnvironment(context)
-                val plan = LanguagePackageResolver(registry).resolve(
-                    LanguagePackageResolutionRequest(
-                        target = LanguagePackageTarget("de-DE", "qwertz"),
-                        environment = environment,
+                RegistrySnapshot(
+                    registry = registry,
+                    environment = environment,
+                    plan = LanguagePackageResolver(registry).resolve(
+                        LanguagePackageResolutionRequest(
+                            target = LanguagePackageTarget("de-DE", "qwertz"),
+                            environment = environment,
+                        ),
                     ),
                 )
-                LanguagePackageRegistrySnapshot(registry, plan, environment)
             }
         } catch (exception: Exception) {
             loadError = exception.message ?: exception.javaClass.simpleName
@@ -120,129 +122,106 @@ fun DevLanguagePackageRegistryScreen(
     ScrollableList(spacing = 8.dp) {
         ScreenTitle("Language package registry", showBack = true, navController)
         Tip(
-            "Debug-only registry and ranker console. It evaluates an inactive de-DE/QWERTZ plan. " +
-                "Probing or scoring loads a model temporarily but never activates it.",
+            "Debug-only inactive de-DE/QWERTZ plan. Probe and score operations load a ranker " +
+                "temporarily but never activate it.",
         )
-
         Button(
             onClick = {
                 rankerResults.clear()
                 revision += 1
             },
             enabled = !loading && rankerResults.values.none { it is RankerDebugResult.Loading },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         ) {
             Text("Refresh installed packages")
         }
 
-        if (loading) DebugProgressRow("Building registry…")
-        loadError?.let { error ->
-            DebugStatusCard(isError = true) {
-                Text("Registry failed", style = Typography.Heading.RegularMl)
-                Text(error, style = Typography.Body.RegularMl)
-            }
-        }
+        if (loading) DebugProgress("Building registry…")
+        loadError?.let { DebugStatus(true, "Registry failed", it) }
 
         snapshot?.let { current ->
-            RegistrySummary(current)
-            ResolutionPlanView(current.plan)
+            DebugCard("Registry") {
+                Property("Packages", current.registry.installedPackages.size.toString())
+                Property("Components", current.registry.components.size.toString())
+                Property("Profiles", current.registry.profiles.size.toString())
+                Property("Target", "de-DE · qwertz")
+                Property("ABI", current.environment.androidAbi)
+                Property("Detected RAM", "${current.environment.ramMb} MB")
+            }
+            PlanView(current.plan)
+
             Text(
                 "Installed components",
                 style = Typography.Heading.Medium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
-
             if (current.registry.components.isEmpty()) {
                 DebugCard("No components") {
                     Text("Install a .futolanguage package through the package inspector first.")
                 }
-            } else {
-                current.registry.components.forEach { component ->
-                    val evaluation = current.plan.evaluations[component.coordinate]
-                    val currentResult = rankerResults[component.coordinate]
-                    val busy = currentResult is RankerDebugResult.Loading
-                    ComponentDebugCard(
-                        component = component,
-                        compatible = evaluation?.isCompatible == true,
-                        issues = evaluation?.issues.orEmpty().map {
-                            "${it.severity.name}: ${it.code} — ${it.message}"
-                        },
-                        rankerResult = currentResult,
-                        onProbe = if (component.isBoundRanker() && !busy) {
-                            {
-                                rankerResults[component.coordinate] = RankerDebugResult.Loading
-                                scope.launch {
-                                    rankerResults[component.coordinate] = probeRanker(providers, component)
-                                }
+            }
+
+            current.registry.components.forEach { component ->
+                val evaluation = current.plan.evaluations[component.coordinate]
+                val result = rankerResults[component.coordinate]
+                val busy = result is RankerDebugResult.Loading
+                ComponentView(
+                    component = component,
+                    compatible = evaluation?.isCompatible == true,
+                    issues = evaluation?.issues.orEmpty().map {
+                        "${it.severity.name}: ${it.code} — ${it.message}"
+                    },
+                    result = result,
+                    onProbe = if (component.isBoundRanker() && !busy) {
+                        {
+                            rankerResults[component.coordinate] = RankerDebugResult.Loading
+                            scope.launch {
+                                rankerResults[component.coordinate] = probeRanker(providers, component)
                             }
-                        } else {
-                            null
-                        },
-                        onScore = if (
-                            component.isBoundRanker() && evaluation?.isCompatible == true && !busy
-                        ) {
-                            {
-                                rankerResults[component.coordinate] = RankerDebugResult.Loading
-                                scope.launch {
-                                    rankerResults[component.coordinate] = scoreGermanSample(providers, component)
-                                }
+                        }
+                    } else {
+                        null
+                    },
+                    onScore = if (
+                        component.isBoundRanker() && evaluation?.isCompatible == true && !busy
+                    ) {
+                        {
+                            rankerResults[component.coordinate] = RankerDebugResult.Loading
+                            scope.launch {
+                                rankerResults[component.coordinate] = scoreGermanSample(providers, component)
                             }
-                        } else {
-                            null
-                        },
-                    )
-                }
+                        }
+                    } else {
+                        null
+                    },
+                )
             }
         }
-
         Spacer(Modifier.height(24.dp))
     }
 }
 
-private fun RegisteredLanguagePackageComponent.isBoundRanker(): Boolean {
-    return component.kind == LanguagePackageComponentKind.ContextRanker && component.runtime != null
-}
-
 @Composable
-private fun RegistrySummary(snapshot: LanguagePackageRegistrySnapshot) {
-    DebugCard("Registry") {
-        Property("Packages", snapshot.registry.installedPackages.size.toString())
-        Property("Components", snapshot.registry.components.size.toString())
-        Property("Profiles", snapshot.registry.profiles.size.toString())
-        Property("Target", "de-DE · qwertz")
-        Property("ABI", snapshot.environment.androidAbi)
-        Property("Detected RAM", "${snapshot.environment.ramMb} MB")
-    }
-}
-
-@Composable
-private fun ResolutionPlanView(plan: LanguagePackageResolutionPlan) {
-    DebugStatusCard(isError = !plan.isValid) {
-        Text(
-            if (plan.isValid) "Automatic plan is valid" else "Automatic plan is invalid",
-            style = Typography.Heading.RegularMl,
-        )
-        Text(
-            "${plan.selectedComponents.size} selected components · ${plan.issues.size} plan issues",
-            style = Typography.Body.RegularMl,
-        )
-    }
-
+private fun PlanView(plan: LanguagePackageResolutionPlan) {
+    DebugStatus(
+        isError = !plan.isValid,
+        title = if (plan.isValid) "Automatic plan is valid" else "Automatic plan is invalid",
+        body = "${plan.selectedComponents.size} selected components · ${plan.issues.size} plan issues",
+    )
     DebugCard("Selection plan") {
         plan.slots.values.forEach { slot ->
-            val selection = when {
-                slot.explicitlyDisabled -> "Disabled"
-                slot.selected.isEmpty() -> "Built-in fallback / none"
-                else -> slot.selected.joinToString { selected ->
-                    "${selected.component.component.name} [${selected.source.name}]"
-                }
-            }
-            Property(slot.kind.name, selection)
+            Property(
+                slot.kind.name,
+                when {
+                    slot.explicitlyDisabled -> "Disabled"
+                    slot.selected.isEmpty() -> "Built-in fallback / none"
+                    else -> slot.selected.joinToString {
+                        "${it.component.component.name} [${it.source.name}]"
+                    }
+                },
+            )
         }
     }
-
     if (plan.issues.isNotEmpty()) {
         DebugCard("Plan issues") {
             plan.issues.forEach { issue ->
@@ -263,26 +242,23 @@ private fun ResolutionPlanView(plan: LanguagePackageResolutionPlan) {
 }
 
 @Composable
-private fun ComponentDebugCard(
+private fun ComponentView(
     component: RegisteredLanguagePackageComponent,
     compatible: Boolean,
     issues: List<String>,
-    rankerResult: RankerDebugResult?,
+    result: RankerDebugResult?,
     onProbe: (() -> Unit)?,
     onScore: (() -> Unit)?,
 ) {
     DebugCard(component.component.name) {
         Property("Coordinate", component.coordinate.toString())
         Property("Kind", component.component.kind.name)
-        Property("Activation", component.component.activation.name)
         Property("Compatibility", if (compatible) "Compatible" else "Unavailable")
         Property("Tasks", component.component.tasks.joinToString())
         Property(
             "Runtime",
             component.component.runtime?.let { "${it.id} API ${it.apiVersion}" } ?: "None",
         )
-        Property("Payload", component.payloadFile.absolutePath)
-
         issues.forEach { issue ->
             Text(
                 issue,
@@ -294,50 +270,22 @@ private fun ComponentDebugCard(
                 },
             )
         }
-
         if (onProbe != null || onScore != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                onProbe?.let {
-                    Button(onClick = it, modifier = Modifier.weight(1f)) { Text("Probe") }
-                }
-                onScore?.let {
-                    Button(onClick = it, modifier = Modifier.weight(1f)) { Text("Score sample") }
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                onProbe?.let { Button(onClick = it) { Text("Probe") } }
+                onScore?.let { Button(onClick = it) { Text("Score sample") } }
             }
         }
-
-        when (rankerResult) {
-            RankerDebugResult.Loading -> DebugProgressRow("Running model operation…")
-            is RankerDebugResult.Message -> DebugMessage(rankerResult)
+        when (result) {
+            RankerDebugResult.Loading -> DebugProgress("Running model operation…")
+            is RankerDebugResult.Message -> DebugStatus(result.isError, "Ranker result", result.text)
             null -> Unit
         }
     }
 }
 
-@Composable
-private fun DebugMessage(result: RankerDebugResult.Message) {
-    Surface(
-        color = if (result.isError) {
-            MaterialTheme.colorScheme.errorContainer
-        } else {
-            MaterialTheme.colorScheme.primaryContainer
-        },
-        contentColor = if (result.isError) {
-            MaterialTheme.colorScheme.onErrorContainer
-        } else {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        },
-        shape = MaterialTheme.shapes.small,
-    ) {
-        Text(
-            result.text,
-            modifier = Modifier.padding(12.dp),
-            style = Typography.SmallMl,
-        )
-    }
+private fun RegisteredLanguagePackageComponent.isBoundRanker(): Boolean {
+    return component.kind == LanguagePackageComponentKind.ContextRanker && component.runtime != null
 }
 
 private suspend fun probeRanker(
@@ -346,9 +294,9 @@ private suspend fun probeRanker(
 ): RankerDebugResult {
     return when (val result = providers.probe(component)) {
         is CandidateRankerProbeOutcome.Ready -> RankerDebugResult.Message(
-            text = buildString {
+            buildString {
                 append("Ready: ${result.descriptor.modelName}")
-                append(" · context ${result.descriptor.maxContextTokens} tokens")
+                append(" · context ${result.descriptor.maxContextTokens}")
                 append(" · batch ${result.descriptor.maxBatchSize}")
                 append(" · boundary ${result.descriptor.boundaryMode.name}")
                 if (result.issues.isNotEmpty()) {
@@ -356,12 +304,11 @@ private suspend fun probeRanker(
                     append(result.issues.joinToString("\n") { "${it.code}: ${it.message}" })
                 }
             },
-            isError = false,
+            false,
         )
-
         is CandidateRankerProbeOutcome.Unavailable -> RankerDebugResult.Message(
-            text = result.issues.joinToString("\n") { "${it.code}: ${it.message}" },
-            isError = true,
+            result.issues.joinToString("\n") { "${it.code}: ${it.message}" },
+            true,
         )
     }
 }
@@ -372,10 +319,9 @@ private suspend fun scoreGermanSample(
 ): RankerDebugResult {
     return when (val opened = providers.open(component)) {
         is CandidateRankerOpenOutcome.Failed -> RankerDebugResult.Message(
-            text = "${opened.failure.code}: ${opened.failure.message}",
-            isError = true,
+            "${opened.failure.code}: ${opened.failure.message}",
+            true,
         )
-
         is CandidateRankerOpenOutcome.Opened -> opened.runtime.use { runtime ->
             val request = CandidateRankerRequest(
                 requestId = "debug-german-sample",
@@ -393,10 +339,9 @@ private suspend fun scoreGermanSample(
             )
             when (val outcome = runtime.rank(request)) {
                 is CandidateRankerOutcome.Failure -> RankerDebugResult.Message(
-                    text = "${outcome.failure.code}: ${outcome.failure.message}",
-                    isError = true,
+                    "${outcome.failure.code}: ${outcome.failure.message}",
+                    true,
                 )
-
                 is CandidateRankerOutcome.Success -> {
                     val policy = CandidateRankerScoringPolicy()
                     val candidates = request.candidates.associateBy { it.id }
@@ -408,10 +353,10 @@ private suspend fun scoreGermanSample(
                                 "(${score.candidateTokenCount}+${score.rightContextTokenCount} tokens)"
                         }
                     RankerDebugResult.Message(
-                        text = rows + "\nTime: " +
+                        rows + "\nTime: " +
                             "%.2f".format(outcome.diagnostics.elapsedMicros / 1000.0) +
                             " ms · native batches: ${outcome.diagnostics.batchCount}",
-                        isError = false,
+                        false,
                     )
                 }
             }
@@ -425,7 +370,6 @@ private fun runtimeEnvironment(context: Context): LanguagePackageRuntimeEnvironm
     val ramMb = (memory.totalMem / (1024L * 1024L))
         .coerceIn(0L, Int.MAX_VALUE.toLong())
         .toInt()
-
     return LanguagePackageRuntimeEnvironment(
         keyboardApi = 2,
         androidAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
@@ -452,14 +396,9 @@ private fun runtimeEnvironment(context: Context): LanguagePackageRuntimeEnvironm
 }
 
 @Composable
-private fun DebugCard(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit,
-) {
+private fun DebugCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.medium,
     ) {
@@ -474,31 +413,21 @@ private fun DebugCard(
 }
 
 @Composable
-private fun DebugStatusCard(
-    isError: Boolean,
-    content: @Composable ColumnScope.() -> Unit,
-) {
+private fun DebugStatus(isError: Boolean, title: String, body: String) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-        color = if (isError) {
-            MaterialTheme.colorScheme.errorContainer
-        } else {
-            MaterialTheme.colorScheme.primaryContainer
-        },
-        contentColor = if (isError) {
-            MaterialTheme.colorScheme.onErrorContainer
-        } else {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        color = if (isError) MaterialTheme.colorScheme.errorContainer
+        else MaterialTheme.colorScheme.primaryContainer,
+        contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer
+        else MaterialTheme.colorScheme.onPrimaryContainer,
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            content()
+            Text(title, style = Typography.Heading.RegularMl)
+            Text(body, style = Typography.Body.RegularMl)
         }
     }
 }
@@ -512,11 +441,9 @@ private fun Property(name: String, value: String) {
 }
 
 @Composable
-private fun DebugProgressRow(message: String) {
+private fun DebugProgress(message: String) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(12.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
