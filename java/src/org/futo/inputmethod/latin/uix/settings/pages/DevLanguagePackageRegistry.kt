@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalContentColor
@@ -53,6 +54,7 @@ import org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerCandidate
 import org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerOpenOutcome
 import org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerOutcome
 import org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerProbeOutcome
+import org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerProviderRegistry
 import org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerRequest
 import org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerScoringPolicy
 import org.futo.inputmethod.latin.languagepack.ranker.CandidateRankingPurpose
@@ -82,13 +84,15 @@ fun DevLanguagePackageRegistryScreen(
     val store = remember(context.applicationContext) {
         LanguagePackageStore.forContext(context.applicationContext)
     }
-    val providerRegistry = remember { createDefaultCandidateRankerProviderRegistry() }
+    val providers = remember { createDefaultCandidateRankerProviderRegistry() }
     val scope = rememberCoroutineScope()
     var revision by remember { mutableIntStateOf(0) }
     var snapshot by remember { mutableStateOf<LanguagePackageRegistrySnapshot?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
-    val rankerResults = remember { mutableStateMapOf<LanguagePackageComponentCoordinate, RankerDebugResult>() }
+    val rankerResults = remember {
+        mutableStateMapOf<LanguagePackageComponentCoordinate, RankerDebugResult>()
+    }
 
     LaunchedEffect(revision) {
         loading = true
@@ -125,7 +129,7 @@ fun DevLanguagePackageRegistryScreen(
                 rankerResults.clear()
                 revision += 1
             },
-            enabled = !loading,
+            enabled = !loading && rankerResults.values.none { it is RankerDebugResult.Loading },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
@@ -133,9 +137,7 @@ fun DevLanguagePackageRegistryScreen(
             Text("Refresh installed packages")
         }
 
-        if (loading) {
-            ProgressRow("Building registry…")
-        }
+        if (loading) DebugProgressRow("Building registry…")
         loadError?.let { error ->
             DebugStatusCard(isError = true) {
                 Text("Registry failed", style = Typography.Heading.RegularMl)
@@ -146,12 +148,12 @@ fun DevLanguagePackageRegistryScreen(
         snapshot?.let { current ->
             RegistrySummary(current)
             ResolutionPlanView(current.plan)
-
             Text(
                 "Installed components",
                 style = Typography.Heading.Medium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
+
             if (current.registry.components.isEmpty()) {
                 DebugCard("No components") {
                     Text("Install a .futolanguage package through the package inspector first.")
@@ -159,41 +161,32 @@ fun DevLanguagePackageRegistryScreen(
             } else {
                 current.registry.components.forEach { component ->
                     val evaluation = current.plan.evaluations[component.coordinate]
+                    val currentResult = rankerResults[component.coordinate]
+                    val busy = currentResult is RankerDebugResult.Loading
                     ComponentDebugCard(
                         component = component,
                         compatible = evaluation?.isCompatible == true,
                         issues = evaluation?.issues.orEmpty().map {
                             "${it.severity.name}: ${it.code} — ${it.message}"
                         },
-                        rankerResult = rankerResults[component.coordinate],
-                        onProbe = if (
-                            component.component.kind == LanguagePackageComponentKind.ContextRanker &&
-                            component.component.runtime != null
-                        ) {
+                        rankerResult = currentResult,
+                        onProbe = if (component.isBoundRanker() && !busy) {
                             {
                                 rankerResults[component.coordinate] = RankerDebugResult.Loading
                                 scope.launch {
-                                    rankerResults[component.coordinate] = probeRanker(
-                                        providerRegistry = providerRegistry,
-                                        component = component,
-                                    )
+                                    rankerResults[component.coordinate] = probeRanker(providers, component)
                                 }
                             }
                         } else {
                             null
                         },
                         onScore = if (
-                            component.component.kind == LanguagePackageComponentKind.ContextRanker &&
-                            component.component.runtime != null &&
-                            evaluation?.isCompatible == true
+                            component.isBoundRanker() && evaluation?.isCompatible == true && !busy
                         ) {
                             {
                                 rankerResults[component.coordinate] = RankerDebugResult.Loading
                                 scope.launch {
-                                    rankerResults[component.coordinate] = scoreGermanSample(
-                                        providerRegistry = providerRegistry,
-                                        component = component,
-                                    )
+                                    rankerResults[component.coordinate] = scoreGermanSample(providers, component)
                                 }
                             }
                         } else {
@@ -206,6 +199,10 @@ fun DevLanguagePackageRegistryScreen(
 
         Spacer(Modifier.height(24.dp))
     }
+}
+
+private fun RegisteredLanguagePackageComponent.isBoundRanker(): Boolean {
+    return component.kind == LanguagePackageComponentKind.ContextRanker && component.runtime != null
 }
 
 @Composable
@@ -280,7 +277,10 @@ private fun ComponentDebugCard(
         Property("Activation", component.component.activation.name)
         Property("Compatibility", if (compatible) "Compatible" else "Unavailable")
         Property("Tasks", component.component.tasks.joinToString())
-        Property("Runtime", component.component.runtime?.let { "${it.id} API ${it.apiVersion}" } ?: "None")
+        Property(
+            "Runtime",
+            component.component.runtime?.let { "${it.id} API ${it.apiVersion}" } ?: "None",
+        )
         Property("Payload", component.payloadFile.absolutePath)
 
         issues.forEach { issue ->
@@ -301,61 +301,56 @@ private fun ComponentDebugCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 onProbe?.let {
-                    Button(onClick = it, modifier = Modifier.weight(1f)) {
-                        Text("Probe")
-                    }
+                    Button(onClick = it, modifier = Modifier.weight(1f)) { Text("Probe") }
                 }
                 onScore?.let {
-                    Button(onClick = it, modifier = Modifier.weight(1f)) {
-                        Text("Score sample")
-                    }
+                    Button(onClick = it, modifier = Modifier.weight(1f)) { Text("Score sample") }
                 }
             }
         }
 
         when (rankerResult) {
-            RankerDebugResult.Loading -> ProgressRow("Running model operation…")
-            is RankerDebugResult.Message -> {
-                Surface(
-                    color = if (rankerResult.isError) {
-                        MaterialTheme.colorScheme.errorContainer
-                    } else {
-                        MaterialTheme.colorScheme.primaryContainer
-                    },
-                    contentColor = if (rankerResult.isError) {
-                        MaterialTheme.colorScheme.onErrorContainer
-                    } else {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    },
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text(
-                        rankerResult.text,
-                        modifier = Modifier.padding(12.dp),
-                        style = Typography.SmallMl,
-                    )
-                }
-            }
+            RankerDebugResult.Loading -> DebugProgressRow("Running model operation…")
+            is RankerDebugResult.Message -> DebugMessage(rankerResult)
             null -> Unit
         }
     }
 }
 
+@Composable
+private fun DebugMessage(result: RankerDebugResult.Message) {
+    Surface(
+        color = if (result.isError) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.primaryContainer
+        },
+        contentColor = if (result.isError) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        },
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Text(
+            result.text,
+            modifier = Modifier.padding(12.dp),
+            style = Typography.SmallMl,
+        )
+    }
+}
+
 private suspend fun probeRanker(
-    providerRegistry: org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerProviderRegistry,
+    providers: CandidateRankerProviderRegistry,
     component: RegisteredLanguagePackageComponent,
 ): RankerDebugResult {
-    return when (val result = providerRegistry.probe(component)) {
+    return when (val result = providers.probe(component)) {
         is CandidateRankerProbeOutcome.Ready -> RankerDebugResult.Message(
             text = buildString {
-                append("Ready: ")
-                append(result.descriptor.modelName)
-                append(" · context ")
-                append(result.descriptor.maxContextTokens)
-                append(" tokens · batch ")
-                append(result.descriptor.maxBatchSize)
-                append(" · boundary ")
-                append(result.descriptor.boundaryMode.name)
+                append("Ready: ${result.descriptor.modelName}")
+                append(" · context ${result.descriptor.maxContextTokens} tokens")
+                append(" · batch ${result.descriptor.maxBatchSize}")
+                append(" · boundary ${result.descriptor.boundaryMode.name}")
                 if (result.issues.isNotEmpty()) {
                     append("\n")
                     append(result.issues.joinToString("\n") { "${it.code}: ${it.message}" })
@@ -372,59 +367,52 @@ private suspend fun probeRanker(
 }
 
 private suspend fun scoreGermanSample(
-    providerRegistry: org.futo.inputmethod.latin.languagepack.ranker.CandidateRankerProviderRegistry,
+    providers: CandidateRankerProviderRegistry,
     component: RegisteredLanguagePackageComponent,
 ): RankerDebugResult {
-    return when (val opened = providerRegistry.open(component)) {
+    return when (val opened = providers.open(component)) {
         is CandidateRankerOpenOutcome.Failed -> RankerDebugResult.Message(
             text = "${opened.failure.code}: ${opened.failure.message}",
             isError = true,
         )
 
-        is CandidateRankerOpenOutcome.Opened -> {
-            opened.runtime.use { runtime ->
-                val request = CandidateRankerRequest(
-                    requestId = "debug-german-sample",
-                    languageTag = "de-DE",
-                    purpose = CandidateRankingPurpose.Correction,
-                    leftContext = "Das ist",
-                    typedText = " warscheinlich",
-                    rightContext = " richtig.",
-                    candidates = listOf(
-                        CandidateRankerCandidate("likely", "wahrscheinlich", " wahrscheinlich"),
-                        CandidateRankerCandidate("apparently", "anscheinend", " anscheinend"),
-                        CandidateRankerCandidate("really", "wirklich", " wirklich"),
-                    ),
-                    rightContextTokenLimit = 8,
+        is CandidateRankerOpenOutcome.Opened -> opened.runtime.use { runtime ->
+            val request = CandidateRankerRequest(
+                requestId = "debug-german-sample",
+                languageTag = "de-DE",
+                purpose = CandidateRankingPurpose.Correction,
+                leftContext = "Das ist",
+                typedText = " warscheinlich",
+                rightContext = " richtig.",
+                candidates = listOf(
+                    CandidateRankerCandidate("likely", "wahrscheinlich", " wahrscheinlich"),
+                    CandidateRankerCandidate("apparently", "anscheinend", " anscheinend"),
+                    CandidateRankerCandidate("really", "wirklich", " wirklich"),
+                ),
+                rightContextTokenLimit = 8,
+            )
+            when (val outcome = runtime.rank(request)) {
+                is CandidateRankerOutcome.Failure -> RankerDebugResult.Message(
+                    text = "${outcome.failure.code}: ${outcome.failure.message}",
+                    isError = true,
                 )
-                when (val outcome = runtime.rank(request)) {
-                    is CandidateRankerOutcome.Failure -> RankerDebugResult.Message(
-                        text = "${outcome.failure.code}: ${outcome.failure.message}",
-                        isError = true,
-                    )
 
-                    is CandidateRankerOutcome.Success -> {
-                        val policy = CandidateRankerScoringPolicy()
-                        val byId = request.candidates.associateBy { it.id }
-                        val rows = outcome.scores
-                            .sortedByDescending { it.normalizedScore(policy) }
-                            .joinToString("\n") { score ->
-                                val candidate = byId.getValue(score.candidateId)
-                                "${candidate.displayText}: ${"%.4f".format(score.normalizedScore(policy))} " +
-                                    "(${score.candidateTokenCount}+${score.rightContextTokenCount} tokens)"
-                            }
-                        RankerDebugResult.Message(
-                            text = buildString {
-                                append(rows)
-                                append("\n")
-                                append("Time: ")
-                                append("%.2f".format(outcome.diagnostics.elapsedMicros / 1000.0))
-                                append(" ms · native batches: ")
-                                append(outcome.diagnostics.batchCount)
-                            },
-                            isError = false,
-                        )
-                    }
+                is CandidateRankerOutcome.Success -> {
+                    val policy = CandidateRankerScoringPolicy()
+                    val candidates = request.candidates.associateBy { it.id }
+                    val rows = outcome.scores
+                        .sortedByDescending { it.normalizedScore(policy) }
+                        .joinToString("\n") { score ->
+                            val candidate = candidates.getValue(score.candidateId)
+                            "${candidate.displayText}: ${"%.4f".format(score.normalizedScore(policy))} " +
+                                "(${score.candidateTokenCount}+${score.rightContextTokenCount} tokens)"
+                        }
+                    RankerDebugResult.Message(
+                        text = rows + "\nTime: " +
+                            "%.2f".format(outcome.diagnostics.elapsedMicros / 1000.0) +
+                            " ms · native batches: ${outcome.diagnostics.batchCount}",
+                        isError = false,
+                    )
                 }
             }
         }
@@ -432,9 +420,8 @@ private suspend fun scoreGermanSample(
 }
 
 private fun runtimeEnvironment(context: Context): LanguagePackageRuntimeEnvironment {
-    val activityManager = context.getSystemService(ActivityManager::class.java)
     val memory = ActivityManager.MemoryInfo()
-    activityManager?.getMemoryInfo(memory)
+    context.getSystemService(ActivityManager::class.java)?.getMemoryInfo(memory)
     val ramMb = (memory.totalMem / (1024L * 1024L))
         .coerceIn(0L, Int.MAX_VALUE.toLong())
         .toInt()
@@ -525,7 +512,7 @@ private fun Property(name: String, value: String) {
 }
 
 @Composable
-private fun ProgressRow(message: String) {
+private fun DebugProgressRow(message: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
