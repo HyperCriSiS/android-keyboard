@@ -21,12 +21,17 @@ This document tracks the implementation boundary for inspectable and editable pe
 - conservative merge planning;
 - deterministic revision handling for records and tombstones;
 - explicit conflicts for different IDs describing the same logical item;
+- pure edit planning for forget, never-learn, pin, word-rule, and correction-pair actions;
 - deterministic legacy IDs derived from normalized content;
 - read-only inventory of Android's system personal dictionary;
 - conversion of system personal words to portable manual-word records;
 - explicit reporting when legacy app IDs are omitted or frequencies are clamped;
+- bounded and cancellable binary-dictionary snapshots;
+- a read-only per-locale user-history inventory service;
 - a mapper from legacy `WordProperty` objects to transparent user-history inventory;
-- instrumentation tests for codecs, validation, merge behavior, deterministic IDs, and legacy mapping.
+- instrumentation tests for codecs, validation, merge behavior, edit behavior, snapshots,
+  deterministic IDs, and legacy mapping;
+- a draft pull request used as the long-running CI and review channel.
 
 ## Existing storage sources
 
@@ -55,18 +60,32 @@ However, `ProbabilityInfo` explicitly documents that legacy timestamp, level, an
 
 ## Safe history snapshot boundary
 
-Dictionary mutations are serialized on the single-threaded `KEYBOARD` executor and protected by a private read/write lock. A production inventory scan must participate in that lock rather than reading the native dictionary concurrently or copying files opportunistically.
+Dictionary mutations are queued on the single-threaded `KEYBOARD` executor. The bounded snapshot reader queues its traversal on the same executor, after any reload requested by the reader. Previously queued mutations therefore complete before traversal and later mutations cannot begin until traversal returns.
 
-The preferred implementation is a small snapshot API inside `ExpandableBinaryDictionary` that:
+The reader:
 
-1. schedules work after queued mutations;
-2. acquires the existing read lock;
+1. requests a reload when required;
+2. enters the same single-threaded mutation queue;
 3. traverses with token `0` until the next token returns to `0`;
-4. enforces a maximum record count and cancellation checks;
-5. returns word properties without exposing the native handle;
-6. releases the lock before mapping or rendering data.
+4. detects repeated traversal tokens and invalid properties;
+5. enforces a maximum record count and cancellation checks;
+6. returns detached `WordProperty` values without exposing the native handle;
+7. transfers mapping and sorting to a separate low-priority executor.
 
-Reflection into the private lock and unsynchronized access to `BinaryDictionary` are deliberately rejected.
+Normal suggestion lookups may continue concurrently as read-only operations. Closing, reloading, clearing, garbage collection, and entry mutation are serialized around the snapshot by the keyboard executor.
+
+Reflection into the private lock, unsynchronized access from arbitrary threads, and opportunistic dictionary-file copying are deliberately rejected.
+
+## Edit semantics
+
+The edit planner is pure and does not modify current production dictionaries. It defines the future transactional behavior:
+
+- **Forget** removes matching learned words and optionally related n-grams, then creates tombstones;
+- **Never learn** performs the same cleanup and adds or updates a `do-not-learn` rule;
+- **Pin** creates or updates a manual word and adds or updates a `pin` rule;
+- **Correction rule** creates or updates one typed/replacement decision without banning either word globally.
+
+Every edit validates its output before returning. The same operations can therefore be used by the Android UI and the future Model Studio.
 
 ## Merge policy boundary
 
@@ -92,21 +111,20 @@ Observation counts from two different record IDs are not added automatically. Th
 
 - no existing user-history file is rewritten;
 - no portable record is used for live suggestions;
-- no learned word is deleted through the new layer;
+- edit plans are not applied to current runtime dictionaries;
 - no `do-not-learn` or correction rule affects typing yet;
 - no personal export is written to user-selected storage;
 - no import modifies local personal data;
-- no UI lists automatic history records yet.
+- no normal settings UI lists automatic history records yet.
 
 ## Next implementation steps
 
-1. add the safe bounded `ExpandableBinaryDictionary` snapshot API;
-2. bind it to `UserHistoryDictionary` through a read-only inventory service;
-3. add a Developer screen showing manual and automatic inventory by locale;
-4. export a preview-only `.futopersonal` archive;
-5. design the transactional editable source store;
-6. compile a runtime snapshot from that store;
-7. compare current and new learning in shadow mode;
-8. add normal in-app search, forget, never-learn, pin, and pair-block actions;
-9. add import/export with rollback;
-10. implement bulk editing in the separate Model Studio repository.
+1. add a Developer screen showing manual and automatic inventory by locale;
+2. export a preview-only `.futopersonal` archive;
+3. design the transactional editable source store;
+4. compile a runtime snapshot from that store;
+5. compare current and new learning in shadow mode;
+6. add normal in-app search and transactional application of forget, never-learn, pin, and
+   pair-block actions;
+7. add import/export with rollback;
+8. implement bulk editing in the separate Model Studio repository.
