@@ -57,7 +57,14 @@ data class LanguagePackageRuntimeBinding(
     val id: String,
     val apiVersion: Int = 1,
     val parameters: JsonObject = JsonObject(emptyMap()),
-)
+) {
+    init {
+        require(id.length in 3..160 && id.matches(Regex("^[a-z0-9]+(?:[._-][a-z0-9]+)*$"))) {
+            "Runtime ID is invalid."
+        }
+        require(apiVersion > 0) { "Runtime API version must be positive." }
+    }
+}
 
 @Serializable
 data class LanguagePackageComponent(
