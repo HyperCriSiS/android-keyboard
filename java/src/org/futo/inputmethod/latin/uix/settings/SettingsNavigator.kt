@@ -31,6 +31,7 @@ import org.futo.inputmethod.latin.uix.settings.pages.CreditsScreenLite
 import org.futo.inputmethod.latin.uix.settings.pages.DevEditTextVariationsScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevKeyboardScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevLanguagePackageInspectorScreen
+import org.futo.inputmethod.latin.uix.settings.pages.DevLanguagePackageRegistryScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEdit
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEditor
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutList
@@ -79,7 +80,6 @@ fun NavHostController.navigateToInfo(title: String, body: String) {
     this.navigate(Route.Info(title, body))
 }
 
-
 object Route {
     @Serializable data class Error(val title: String, val body: String)
     @Serializable data class Info(val title: String, val body: String)
@@ -92,7 +92,6 @@ object Route {
     @Serializable data class DeleteTheme(val name: String)
     @Serializable data class ThirdPartyInfo(val idx: Int)
 }
-
 
 val SettingsMenus = listOf(
     HomeScreenLite,
@@ -110,9 +109,8 @@ val SettingsMenus = listOf(
     HelpMenu,
     MiscMenu,
     CreditsScreenLite,
-    IMESettingsMenu
+    IMESettingsMenu,
 ) + AllActions.mapNotNull { it.settingsMenu } + SettingsByLanguage.values
-
 
 // Improves the semantics so that we don't have to deal with NavBackStackEntry when we don't need it
 @JvmInline
@@ -122,10 +120,9 @@ internal inline fun <reified T : Any> NavGraphBuilderWrapper.dialog(noinline con
 internal inline fun <reified T : Any> NavGraphBuilderWrapper.composable(noinline content: @Composable (T) -> Unit) =
     parent.composable<T> { content(it.toRoute()) }
 
-
 @Composable
 fun SettingsNavigator(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
 ) {
     val nav = navController
     CompositionLocalProvider(LocalNavController provides navController) {
@@ -135,7 +132,7 @@ fun SettingsNavigator(
             enterTransition = { EnterTransition.None },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None }
+            popExitTransition = { ExitTransition.None },
         ) {
             with(NavGraphBuilderWrapper(this)) {
                 composable<Route.AddLayout> { SelectLayoutsScreen(nav, it.lang.toLocale()) }
@@ -161,13 +158,11 @@ fun SettingsNavigator(
             composable("search") { SearchScreen(navController) }
             composable("languages") { LanguagesScreen(navController) }
             composable("addLanguage") { SelectLanguageScreen(navController) }
-            composable("pdict") {
-                PersonalDictionaryLanguageList()
-            }
+            composable("pdict") { PersonalDictionaryLanguageList() }
             composable("advancedparams") { AdvancedParametersScreen(navController) }
             composable("actionEdit") { ActionEditorScreen(navController) }
             SettingsMenus.forEach { menu ->
-                if(menu.registerNavPath) composable(menu.navPath) { UserSettingsMenuScreen(menu) }
+                if (menu.registerNavPath) composable(menu.navPath) { UserSettingsMenuScreen(menu) }
             }
             composable("keyboardAndTyping") { KeyboardAndTypingScreen(navController) }
             composable("resize") { ResizeScreen(navController) }
@@ -179,6 +174,7 @@ fun SettingsNavigator(
             composable("devlayouteditor") { DevLayoutEditor(navController) }
             composable("devtheme") { DevThemeImportScreen(navController) }
             composable("devlanguagepackage") { DevLanguagePackageInspectorScreen(navController) }
+            composable("devlanguagepackageregistry") { DevLanguagePackageRegistryScreen(navController) }
             composable("devkeyboard") { DevKeyboardScreen(navController) }
             composable("blacklist") { BlacklistScreen(navController) }
             composable("payment") { PaymentScreen(navController) { navController.navigateUp() } }
@@ -186,15 +182,9 @@ fun SettingsNavigator(
             composable("credits") { CreditsScreen(navController) }
             composable("exportingcfg") { ExportingMenu(navController) }
             composable("kasroz") { KASROZMenu() }
-            dialog("update") {
-                UpdateDialog(navController = navController)
-            }
-            dialog("alreadyPaid") {
-                AlreadyPaidDialog(navController = navController)
-            }
-            dialog("customThemeDialog") {
-                CustomThemeDialog(navController = navController)
-            }
+            dialog("update") { UpdateDialog(navController = navController) }
+            dialog("alreadyPaid") { AlreadyPaidDialog(navController = navController) }
+            dialog("customThemeDialog") { CustomThemeDialog(navController = navController) }
             addModelManagerNavigation(navController)
         }
     }
