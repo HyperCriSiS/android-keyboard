@@ -2,6 +2,7 @@ package org.futo.inputmethod.latin.languagepack
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 const val CURRENT_LANGUAGE_PACKAGE_FORMAT_VERSION = "0.1"
 
@@ -47,6 +48,17 @@ data class LanguagePackageAuthor(
     val url: String? = null,
 )
 
+/**
+ * Selects a runtime adapter without requiring adapter-specific metadata to be written into the
+ * component payload itself. This allows an existing standard GGUF model to be wrapped by a package.
+ */
+@Serializable
+data class LanguagePackageRuntimeBinding(
+    val id: String,
+    val apiVersion: Int = 1,
+    val parameters: JsonObject = JsonObject(emptyMap()),
+)
+
 @Serializable
 data class LanguagePackageComponent(
     val id: String,
@@ -62,6 +74,7 @@ data class LanguagePackageComponent(
     val capabilities: LanguagePackageCapabilities = LanguagePackageCapabilities(),
     val compatibility: LanguagePackageCompatibility = LanguagePackageCompatibility(),
     val dependencies: List<LanguagePackageComponentReference> = emptyList(),
+    val runtime: LanguagePackageRuntimeBinding? = null,
     val payload: LanguagePackagePayload,
 )
 
