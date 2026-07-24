@@ -90,8 +90,7 @@
         "qwerty"
       ],
       "tasks": [
-        "candidate-ranking-v1",
-        "next-word-prediction-v1"
+        "candidate-ranking-v1"
       ],
       "capabilities": {
         "required": [
