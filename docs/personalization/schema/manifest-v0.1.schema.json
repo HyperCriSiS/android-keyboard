@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keyboard.futo.org/schemas/personalization/manifest-v0.1.schema.json",
+  "title": "FUTO Personalization Export Manifest 0.1",
+  "type": "object",
+  "required": [
+    "formatVersion",
+    "exportId",
+    "createdAt",
+    "application",
+    "includedCategories",
+    "locales",
+    "privacy",
+    "data",
+    "counts"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "0.1"
+    },
+    "exportId": {
+      "$ref": "#/$defs/uuid"
+    },
+    "createdAt": {
+      "$ref": "#/$defs/epochMillis"
+    },
+    "application": {
+      "$ref": "#/$defs/application"
+    },
+    "originDeviceId": {
+      "$ref": "#/$defs/uuid"
+    },
+    "includedCategories": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "manual-words",
+          "learned-words",
+          "learned-ngrams",
+          "word-rules",
+          "correction-rules",
+          "tombstones"
+        ]
+      }
+    },
+    "locales": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/languageTag"
+      }
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    },
+    "data": {
+      "$ref": "#/$defs/payload"
+    },
+    "counts": {
+      "$ref": "#/$defs/counts"
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "epochMillis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "languageTag": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 35,
+      "pattern": "^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "application": {
+      "type": "object",
+      "required": [
+        "id",
+        "versionName",
+        "versionCode"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "versionName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "versionCode": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "privacy": {
+      "type": "object",
+      "required": [
+        "containsNgrams",
+        "containsAppScopes",
+        "containsSentenceText",
+        "encrypted"
+      ],
+      "properties": {
+        "containsNgrams": {
+          "type": "boolean"
+        },
+        "containsAppScopes": {
+          "type": "boolean"
+        },
+        "containsSentenceText": {
+          "const": false
+        },
+        "encrypted": {
+          "type": "boolean"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "path",
+        "mediaType",
+        "sha256",
+        "sizeBytes"
+      ],
+      "properties": {
+        "path": {
+          "const": "data.json"
+        },
+        "mediaType": {
+          "const": "application/vnd.futo.keyboard.personalization+json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "manualWords",
+        "learnedWords",
+        "learnedNgrams",
+        "wordRules",
+        "correctionRules",
+        "tombstones"
+      ],
+      "properties": {
+        "manualWords": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "learnedWords": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "learnedNgrams": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wordRules": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "correctionRules": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tombstones": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    }
+  }
+}
