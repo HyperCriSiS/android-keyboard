@@ -39,6 +39,7 @@ set(LATIN_IME_CORE_SRC_FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/train.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/common.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/LanguageModel.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/CandidateScorer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/ModelMeta.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/protobuf-lite/arena.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/protobuf-lite/arenastring.cc
