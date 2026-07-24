@@ -1,8 +1,16 @@
 # Language package development workflow
 
-The current implementation supports inspection, immutable debug installation, component registry construction, compatibility evaluation, and deterministic resolution planning.
+The current implementation supports:
 
-No installed dictionary, model, rule, adapter, or profile is loaded or activated yet.
+- package inspection and immutable debug installation;
+- component registry construction;
+- compatibility evaluation and deterministic resolution planning;
+- declarative runtime bindings;
+- an experimental generic GGUF candidate-ranker provider;
+- complete candidate-sequence scoring with optional right context;
+- on-device debug probing and sample scoring.
+
+No installed dictionary, rule, adapter, profile, or model is activated in normal keyboard operation yet. The debug ranker console may load a selected model temporarily and closes it after the operation.
 
 ## Build an example package
 
@@ -26,25 +34,31 @@ python tools/language-packages/create-example-package.py D:/Temp/example.futolan
 
 The builder uses only the Python standard library. It calculates the payload SHA-256 and byte size and writes a deterministic ZIP structure suitable for repeated manual tests.
 
-## Inspect and install the package on Android
+The generated package currently contains only a placeholder dictionary payload. The larger example manifest showing a dictionary, rules, profile, and GGUF ranker binding is:
+
+```text
+docs/language-packages/examples/german-standard.manifest.json
+```
+
+## Inspect and install a package on Android
 
 1. Build and install an `unstableDebug` APK from the `dev` branch.
 2. Open FUTO Keyboard settings.
 3. Open **Developer**.
 4. Select **Language package inspector**.
-5. Select the generated `.futolanguage` file.
+5. Select a `.futolanguage` file.
 6. Confirm that the package is valid.
 7. Select **Install package without activating components**.
 
-The expected inspection result is:
+For the generated example package, the expected result is:
 
-- package status: valid;
 - package ID: `org.futo.example.german.dictionary`;
 - one stackable dictionary component;
 - zero validation errors;
-- zero validation warnings.
+- zero validation warnings;
+- installation result: **Package installed**.
 
-The expected installation result is **Package installed**. Importing the exact same archive again must report **Package already installed** rather than creating a duplicate.
+Importing the exact same archive again must report **Package already installed** rather than creating a duplicate.
 
 The inspector and installer perform file work on `Dispatchers.IO`. They do not route through the existing theme/model importer and do not modify the active keyboard configuration.
 
@@ -130,6 +144,57 @@ The full contract is documented in:
 docs/language-packages/RESOLUTION.md
 ```
 
+## Generic GGUF candidate ranker
+
+A standard causal GGUF can be wrapped without modifying its weights or metadata by declaring:
+
+```json
+{
+  "runtime": {
+    "id": "gguf-causal-ranker",
+    "apiVersion": 1,
+    "parameters": {
+      "boundaryMode": "leading-separator",
+      "maxContextTokens": 256,
+      "maxBatchSize": 16,
+      "supportsRightContext": true,
+      "bosPolicy": "model-default",
+      "addEos": false,
+      "contextTruncation": "keep-last"
+    }
+  }
+}
+```
+
+The adapter supports the tokenizer embedded in a normal GGUF. Existing KeyboardLM GGUFs using an explicitly embedded external SentencePiece tokenizer remain supported.
+
+The experimental scorer evaluates the left context once, reuses the KV prefix for every candidate, scores every candidate token, and optionally scores a bounded right-context continuation.
+
+The full contract is documented in:
+
+```text
+docs/language-packages/CANDIDATE_RANKER.md
+```
+
+## Inspect registry and rankers on Android
+
+1. Install at least one package.
+2. Open **Developer**.
+3. Select **Language package registry**.
+4. Review the inactive automatic `de-DE` / `qwertz` resolution plan.
+5. Select **Probe** on a bound context ranker.
+6. Select **Score sample** to run the German debug sentence.
+
+The sample compares:
+
+```text
+Das ist wahrscheinlich richtig.
+Das ist anscheinend richtig.
+Das ist wirklich richtig.
+```
+
+The screen reports normalized scores, candidate/right-context token counts, elapsed time, and native batch count. The model is never persisted as active.
+
 ## What is currently validated
 
 - safe normalized relative ZIP paths;
@@ -140,14 +205,17 @@ docs/language-packages/RESOLUTION.md
 - compression-ratio limit when the ZIP metadata exposes compressed size;
 - strict UTF-8 manifest decoding;
 - strict JSON fields, except explicitly permitted `x-` extensions;
-- package, component, profile, and reference semantics;
+- package, component, profile, reference, and runtime-binding semantics;
 - component activation cardinality;
 - internal dependency cycles;
 - declared payload existence;
 - SHA-256 digests;
 - uncompressed payload sizes;
 - unreferenced archive entries;
-- extracted content matching the inspected archive.
+- extracted content matching the inspected archive;
+- ranker request and result completeness;
+- GGUF adapter parameter bounds;
+- runtime provider ID and API-version selection.
 
 ## Automated coverage
 
@@ -163,19 +231,36 @@ Instrumentation tests currently cover:
 - profile and user selection precedence;
 - stackable append behavior;
 - automatic exclusive selection;
-- required dependency closure and conflicts.
+- required dependency closure and conflicts;
+- candidate-ranker request/result validation;
+- normalization and batch planning;
+- runtime-provider selection and descriptor validation;
+- generic GGUF adapter configuration;
+- multi-batch score ordering and diagnostics through a fake native API;
+- runtime errors, disabled right context, and idempotent close.
+
+## Build verification status
+
+The pure SemVer core has been compiled independently with `kotlinc`, which exposed and allowed correction of a type-inference issue.
+
+A full Gradle/NDK build has not yet run in the current execution environment because that container cannot resolve `github.com` to obtain the repository and dependencies. Direct commits to `dev` currently receive no automatic GitHub status checks. The Android instrumentation tests and native sources are therefore committed but still require execution in a normal development environment.
 
 ## Deliberately not implemented yet
 
-- component activation;
-- persisted package selection per language;
+- production component activation;
+- persisted package/profile selection per language;
+- integration of ranker scores into live keyboard suggestions;
+- dictionary/touch/personalization score fusion;
+- confidence and automatic-correction thresholds;
+- benchmark dataset and result formats;
 - package update policy and rollback UI;
 - removal UI;
-- component-specific runtime probes;
-- candidate ranker runtime implementation;
+- deeper model architecture and memory probes;
+- runtime pooling and memory-pressure behavior;
+- asynchronous cancellation inside one native decode;
 - signature verification and trust policy;
 - public package repository integration.
 
 ZIP entries are always written as regular private files rather than restoring archive permissions or symbolic links. External ZIP attributes therefore cannot create links during installation.
 
-The next implementation step is the candidate-ranker runtime contract: define complete-candidate scoring, batching, cancellation, model probes, and deterministic error reporting before connecting any GGUF model.
+The next implementation step is the benchmark contract and score-fusion harness. It will let the same German test cases compare dictionary order, raw model scores, fused scores, false-correction risk, latency, and memory before the ranker is connected to production suggestions.
