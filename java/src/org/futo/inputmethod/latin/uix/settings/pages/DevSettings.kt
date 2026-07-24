@@ -162,6 +162,14 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
             style = NavigationItemStyle.Misc,
             navigate = { navController.navigate("devtheme") }
         )
+        if (BuildConfig.DEBUG) {
+            NavigationItem(
+                title = "Language package inspector",
+                subtitle = "Validate .futolanguage packages without installing them",
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("devlanguagepackage") },
+            )
+        }
 
         SettingToggleDataStore(
             title = "Allow transformer models on non QWERTY layouts",
