@@ -28,7 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -40,6 +39,8 @@ import kotlinx.coroutines.withContext
 import org.futo.inputmethod.latin.languagepack.LanguagePackageArchiveInspector
 import org.futo.inputmethod.latin.languagepack.LanguagePackageComponent
 import org.futo.inputmethod.latin.languagepack.LanguagePackageInspectionResult
+import org.futo.inputmethod.latin.languagepack.LanguagePackageInstallResult
+import org.futo.inputmethod.latin.languagepack.LanguagePackageStore
 import org.futo.inputmethod.latin.languagepack.LanguagePackageValidationIssue
 import org.futo.inputmethod.latin.languagepack.LanguagePackageValidationSeverity
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
@@ -48,6 +49,7 @@ import org.futo.inputmethod.latin.uix.settings.Tip
 import org.futo.inputmethod.latin.uix.theme.Typography
 
 private data class InspectedLanguagePackage(
+    val uri: Uri,
     val displayName: String,
     val result: LanguagePackageInspectionResult,
 )
@@ -58,10 +60,15 @@ fun DevLanguagePackageInspectorScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val store = remember(context.applicationContext) {
+        LanguagePackageStore.forContext(context.applicationContext)
+    }
 
     var inspectedPackage by remember { mutableStateOf<InspectedLanguagePackage?>(null) }
     var isInspecting by remember { mutableStateOf(false) }
+    var isInstalling by remember { mutableStateOf(false) }
     var readFailure by remember { mutableStateOf<String?>(null) }
+    var installResult by remember { mutableStateOf<LanguagePackageInstallResult?>(null) }
 
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -70,6 +77,7 @@ fun DevLanguagePackageInspectorScreen(
 
             inspectedPackage = null
             readFailure = null
+            installResult = null
             isInspecting = true
 
             scope.launch {
@@ -80,7 +88,7 @@ fun DevLanguagePackageInspectorScreen(
                             LanguagePackageArchiveInspector.inspect(input)
                         } ?: throw IllegalStateException("The selected document could not be opened.")
 
-                        InspectedLanguagePackage(displayName, result)
+                        InspectedLanguagePackage(uri, displayName, result)
                     }
                 } catch (exception: Exception) {
                     readFailure = exception.message ?: exception.javaClass.simpleName
@@ -95,8 +103,8 @@ fun DevLanguagePackageInspectorScreen(
         ScreenTitle("Language package inspector", showBack = true, navController)
 
         Tip(
-            "Debug-only preview. Packages are read and validated in memory. " +
-                "Nothing is installed, extracted, or activated.",
+            "Debug-only package workflow. Inspection changes nothing. A valid package may then be " +
+                "installed into the private immutable package store, but no component is activated.",
         )
 
         Button(
@@ -110,7 +118,7 @@ fun DevLanguagePackageInspectorScreen(
                     ),
                 )
             },
-            enabled = !isInspecting,
+            enabled = !isInspecting && !isInstalling,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
@@ -119,19 +127,7 @@ fun DevLanguagePackageInspectorScreen(
         }
 
         if (isInspecting) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator()
-                Text(
-                    "Inspecting package…",
-                    modifier = Modifier.padding(start = 16.dp),
-                )
-            }
+            ProgressRow("Inspecting package…")
         }
 
         readFailure?.let { message ->
@@ -143,9 +139,118 @@ fun DevLanguagePackageInspectorScreen(
 
         inspectedPackage?.let { inspected ->
             InspectionResult(inspected)
+
+            if (inspected.result.isValid) {
+                Button(
+                    onClick = {
+                        installResult = null
+                        isInstalling = true
+                        scope.launch {
+                            installResult = try {
+                                withContext(Dispatchers.IO) {
+                                    context.contentResolver.openInputStream(inspected.uri)?.use { input ->
+                                        store.install(input)
+                                    } ?: LanguagePackageInstallResult.Failed(
+                                        "The selected document could not be reopened for installation.",
+                                    )
+                                }
+                            } catch (exception: Exception) {
+                                LanguagePackageInstallResult.Failed(
+                                    exception.message ?: exception.javaClass.simpleName,
+                                    exception,
+                                )
+                            } finally {
+                                isInstalling = false
+                            }
+                        }
+                    },
+                    enabled = !isInspecting && !isInstalling,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    Text("Install package without activating components")
+                }
+            }
+        }
+
+        if (isInstalling) {
+            ProgressRow("Installing package atomically…")
+        }
+
+        installResult?.let { result ->
+            InstallResultSurface(result)
         }
 
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun ProgressRow(message: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator()
+        Text(message, modifier = Modifier.padding(start = 16.dp))
+    }
+}
+
+@Composable
+private fun InstallResultSurface(result: LanguagePackageInstallResult) {
+    when (result) {
+        is LanguagePackageInstallResult.Installed -> {
+            StatusSurface(isError = false) {
+                Text("Package installed", style = Typography.Heading.RegularMl)
+                Text(
+                    "${result.packageInfo.manifest.packageInfo.id} ${result.packageInfo.manifest.packageInfo.version}",
+                    style = Typography.Body.RegularMl,
+                )
+                Text(
+                    "Installed only. No dictionary, model, rule, or profile has been activated.",
+                    style = Typography.SmallMl,
+                )
+            }
+        }
+
+        is LanguagePackageInstallResult.AlreadyInstalled -> {
+            StatusSurface(isError = false) {
+                Text("Package already installed", style = Typography.Heading.RegularMl)
+                Text(
+                    "The identical archive is already present. The existing installation was left unchanged.",
+                    style = Typography.Body.RegularMl,
+                )
+            }
+        }
+
+        is LanguagePackageInstallResult.Invalid -> {
+            StatusSurface(isError = true) {
+                Text("Package failed validation during installation", style = Typography.Heading.RegularMl)
+                Text(
+                    "${result.inspection.issues.count { it.severity == LanguagePackageValidationSeverity.Error }} errors",
+                    style = Typography.Body.RegularMl,
+                )
+            }
+        }
+
+        is LanguagePackageInstallResult.Conflict -> {
+            StatusSurface(isError = true) {
+                Text("Package version conflict", style = Typography.Heading.RegularMl)
+                Text("${result.packageId} ${result.version}", style = Typography.Body.RegularMl)
+                Text(result.message, style = Typography.Body.RegularMl)
+            }
+        }
+
+        is LanguagePackageInstallResult.Failed -> {
+            StatusSurface(isError = true) {
+                Text("Package installation failed", style = Typography.Heading.RegularMl)
+                Text(result.message, style = Typography.Body.RegularMl)
+            }
+        }
     }
 }
 
@@ -334,10 +439,4 @@ private fun humanReadableByteCount(bytes: Long): String {
         units.next()
     }
     return String.format("%.1f %cB", value / 1000.0, units.current())
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun DevLanguagePackageInspectorScreenPreview() {
-    DevLanguagePackageInspectorScreen()
 }
