@@ -121,6 +121,11 @@ object PersonalizationEditPlanner {
             originDeviceId = originDeviceId,
             removeRelatedNgrams = true,
         )
+        val newlyDeletedIds = forgotten.changes
+            .asSequence()
+            .filter { it.kind == PersonalizationEditKind.RecordDeleted }
+            .map { it.recordId.lowercase(Locale.ROOT) }
+            .toSet()
         val changes = forgotten.changes.toMutableList()
         val ruleResult = upsertWordRule(
             data = forgotten.data,
@@ -135,7 +140,7 @@ object PersonalizationEditPlanner {
 
         val tombstones = ruleResult.data.tombstones.map { tombstone ->
             if (tombstone.reason == PersonalizationDeletionReason.UserDelete &&
-                forgotten.data.tombstones.any { it.targetId == tombstone.targetId }
+                tombstone.targetId.lowercase(Locale.ROOT) in newlyDeletedIds
             ) {
                 tombstone.copy(reason = PersonalizationDeletionReason.NeverLearn)
             } else {
