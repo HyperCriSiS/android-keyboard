@@ -2,9 +2,9 @@ package org.futo.inputmethod.latin.languagepack.ranker
 
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.latin.languagepack.RegisteredLanguagePackageComponent
@@ -40,7 +40,7 @@ internal class GgufCandidateRankerNativeBridge {
 }
 
 @OptIn(DelicateCoroutinesApi::class)
-class GgufCandidateRankerRuntimeProvider(
+internal class GgufCandidateRankerRuntimeProvider(
     private val bridge: GgufCandidateRankerNativeBridge = GgufCandidateRankerNativeBridge(),
 ) : CandidateRankerRuntimeProvider {
     override suspend fun probe(
@@ -169,7 +169,7 @@ private class GgufCandidateRankerRuntime(
 
     override suspend fun rank(request: CandidateRankerRequest): CandidateRankerOutcome =
         withContext(LanguageModelScope) {
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
 
             val validation = CandidateRankerValidator.validateRequest(request, descriptor)
             if (!validation.isValid) {
@@ -197,7 +197,7 @@ private class GgufCandidateRankerRuntime(
             var nativeBatchCount = 0L
 
             for (batch in batches) {
-                coroutineContext.ensureActive()
+                currentCoroutineContext().ensureActive()
                 val nativeResult = nativeLock.withLock {
                     val nativeState = state
                     if (nativeState == 0L) {
@@ -229,7 +229,7 @@ private class GgufCandidateRankerRuntime(
                 }
             }
 
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             val success = CandidateRankerOutcome.Success(
                 requestId = request.requestId,
                 descriptor = descriptor,
