@@ -152,11 +152,11 @@ class LanguagePackageRegistry private constructor(
                     append(targetPackageId)
                     append(':')
                     append(reference.componentId)
-                    append(''')
+                    append("'")
                     reference.versionRange?.let {
                         append(" with component version range '")
                         append(it)
-                        append(''')
+                        append("'")
                     }
                     append('.')
                 },
