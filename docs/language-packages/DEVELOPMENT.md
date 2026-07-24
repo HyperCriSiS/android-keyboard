@@ -1,6 +1,8 @@
 # Language package development workflow
 
-The current implementation supports inspection and debug installation. Installation stores a fully validated package privately and immutably, but it does not activate any dictionary, model, rule, adapter, or profile.
+The current implementation supports inspection, immutable debug installation, component registry construction, compatibility evaluation, and deterministic resolution planning.
+
+No installed dictionary, model, rule, adapter, or profile is loaded or activated yet.
 
 ## Build an example package
 
@@ -76,6 +78,58 @@ The installer:
 
 A package ID and version are immutable. Installing different bytes under an already installed ID/version produces a conflict. Identical bytes are treated as an idempotent reinstall.
 
+## Component registry
+
+`LanguagePackageStore.buildRegistry()` creates a pure registry from all readable installed package versions.
+
+The registry exposes:
+
+- exact package, component, and profile coordinates;
+- all installed alternatives;
+- internal and external component reference resolution;
+- SemVer component ranges;
+- payload paths;
+- recursive dependency evaluation.
+
+Internal references remain inside their exact owning package version. External references may select from multiple installed package versions.
+
+## Compatibility evaluation
+
+Compatibility is evaluated for a target language, layout, and explicit runtime environment.
+
+Current checks include:
+
+- target language and layout;
+- keyboard API range;
+- Android ABI;
+- minimum RAM;
+- supported tasks and required capabilities;
+- runtime features;
+- payload existence and byte size;
+- required and optional dependencies;
+- cross-package dependency cycles.
+
+Compatibility checks do not instantiate model or dictionary runtimes.
+
+## Resolution planning
+
+`LanguagePackageResolver` creates an inactive selection plan using this precedence:
+
+1. explicit user override;
+2. selected package profile;
+3. deterministic automatic selection;
+4. built-in fallback outside the resolver.
+
+Stackable components are never activated merely because they are installed. Exclusive model slots may be selected automatically, with a warning when alternatives exist.
+
+Required dependency closure is included in the plan. Disabled dependency slots and conflicting exclusive dependencies make the plan invalid.
+
+The full contract is documented in:
+
+```text
+docs/language-packages/RESOLUTION.md
+```
+
 ## What is currently validated
 
 - safe normalized relative ZIP paths;
@@ -95,17 +149,33 @@ A package ID and version are immutable. Installing different bytes under an alre
 - unreferenced archive entries;
 - extracted content matching the inspected archive.
 
+## Automated coverage
+
+Instrumentation tests currently cover:
+
+- manifest encoding and strict extension handling;
+- semantic manifest validation;
+- archive inspection and malicious path rejection;
+- immutable store installation and conflicts;
+- SemVer precedence and ranges;
+- internal and external component references;
+- runtime compatibility filtering;
+- profile and user selection precedence;
+- stackable append behavior;
+- automatic exclusive selection;
+- required dependency closure and conflicts.
+
 ## Deliberately not implemented yet
 
 - component activation;
-- package selection per language;
+- persisted package selection per language;
 - package update policy and rollback UI;
 - removal UI;
-- runtime compatibility probes;
-- component resolution across installed packages;
+- component-specific runtime probes;
+- candidate ranker runtime implementation;
 - signature verification and trust policy;
 - public package repository integration.
 
 ZIP entries are always written as regular private files rather than restoring archive permissions or symbolic links. External ZIP attributes therefore cannot create links during installation.
 
-The next implementation step is the component registry and resolver: enumerate installed components, evaluate compatibility, and produce a deterministic inactive/active selection plan before any runtime integration.
+The next implementation step is the candidate-ranker runtime contract: define complete-candidate scoring, batching, cancellation, model probes, and deterministic error reporting before connecting any GGUF model.
