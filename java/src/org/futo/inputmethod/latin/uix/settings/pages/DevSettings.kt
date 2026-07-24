@@ -165,6 +165,12 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
                 style = NavigationItemStyle.Misc,
                 navigate = { navController.navigate("devlanguagepackageregistry") },
             )
+            NavigationItem(
+                title = "Personalization inventory",
+                subtitle = "Read-only view of manual words and automatic user history",
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("devpersonalizationinventory") },
+            )
         }
 
         SettingToggleDataStore(
