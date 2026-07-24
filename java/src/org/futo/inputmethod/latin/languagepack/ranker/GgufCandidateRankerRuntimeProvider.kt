@@ -11,8 +11,8 @@ import org.futo.inputmethod.latin.languagepack.RegisteredLanguagePackageComponen
 import org.futo.inputmethod.latin.utils.JniUtils
 import org.futo.inputmethod.latin.xlm.LanguageModelScope
 
-internal class GgufCandidateRankerNativeBridge {
-    external fun openNative(
+internal interface GgufCandidateRankerNativeApi {
+    fun openNative(
         modelPath: String,
         maxContextTokens: Int,
         maxBatchSize: Int,
@@ -23,9 +23,37 @@ internal class GgufCandidateRankerNativeBridge {
         outError: Array<String?>,
     ): Long
 
-    external fun closeNative(state: Long)
+    fun closeNative(state: Long)
 
-    external fun scoreNative(
+    fun scoreNative(
+        state: Long,
+        leftContext: String,
+        rightContext: String,
+        candidates: Array<String>,
+        rightContextTokenLimit: Int,
+        outCandidateLogProbabilities: DoubleArray,
+        outCandidateTokenCounts: IntArray,
+        outRightContextLogProbabilities: DoubleArray,
+        outRightContextTokenCounts: IntArray,
+        outDiagnostics: LongArray,
+    ): String?
+}
+
+internal class GgufCandidateRankerNativeBridge : GgufCandidateRankerNativeApi {
+    external override fun openNative(
+        modelPath: String,
+        maxContextTokens: Int,
+        maxBatchSize: Int,
+        supportsRightContext: Boolean,
+        bosPolicy: Int,
+        addEos: Boolean,
+        contextTruncation: Int,
+        outError: Array<String?>,
+    ): Long
+
+    external override fun closeNative(state: Long)
+
+    external override fun scoreNative(
         state: Long,
         leftContext: String,
         rightContext: String,
@@ -41,7 +69,8 @@ internal class GgufCandidateRankerNativeBridge {
 
 @OptIn(DelicateCoroutinesApi::class)
 internal class GgufCandidateRankerRuntimeProvider(
-    private val bridge: GgufCandidateRankerNativeBridge = GgufCandidateRankerNativeBridge(),
+    private val nativeApi: GgufCandidateRankerNativeApi = GgufCandidateRankerNativeBridge(),
+    private val nativeLoader: suspend () -> Unit = ::loadFutoNativeLibrary,
 ) : CandidateRankerRuntimeProvider {
     override suspend fun probe(
         component: RegisteredLanguagePackageComponent,
@@ -60,7 +89,7 @@ internal class GgufCandidateRankerRuntimeProvider(
             }
 
             is GgufCandidateRankerConfigurationResult.Valid -> {
-                ensureNativeLibraryLoaded()
+                nativeLoader()
                 val opened = openNative(component, configuration.parameters)
                 if (opened.state == 0L) {
                     CandidateRankerProbeOutcome.Unavailable(
@@ -73,7 +102,7 @@ internal class GgufCandidateRankerRuntimeProvider(
                         ),
                     )
                 } else {
-                    bridge.closeNative(opened.state)
+                    nativeApi.closeNative(opened.state)
                     CandidateRankerProbeOutcome.Ready(
                         descriptor = GgufCandidateRankerConfiguration.descriptor(
                             component = component,
@@ -101,7 +130,7 @@ internal class GgufCandidateRankerRuntimeProvider(
             }
 
             is GgufCandidateRankerConfigurationResult.Valid -> {
-                ensureNativeLibraryLoaded()
+                nativeLoader()
                 val opened = openNative(component, configuration.parameters)
                 if (opened.state == 0L) {
                     CandidateRankerOpenOutcome.Failed(
@@ -114,7 +143,7 @@ internal class GgufCandidateRankerRuntimeProvider(
                 } else {
                     CandidateRankerOpenOutcome.Opened(
                         GgufCandidateRankerRuntime(
-                            bridge = bridge,
+                            nativeApi = nativeApi,
                             initialState = opened.state,
                             descriptor = GgufCandidateRankerConfiguration.descriptor(
                                 component = component,
@@ -128,18 +157,12 @@ internal class GgufCandidateRankerRuntimeProvider(
         }
     }
 
-    private suspend fun ensureNativeLibraryLoaded() {
-        withContext(Dispatchers.Main) {
-            JniUtils.loadNativeLibrary()
-        }
-    }
-
     private fun openNative(
         component: RegisteredLanguagePackageComponent,
         parameters: GgufCandidateRankerParameters,
     ): NativeOpenResult {
         val errors = arrayOfNulls<String>(1)
-        val state = bridge.openNative(
+        val state = nativeApi.openNative(
             modelPath = component.payloadFile.absolutePath,
             maxContextTokens = parameters.maxContextTokens,
             maxBatchSize = parameters.maxBatchSize,
@@ -159,8 +182,8 @@ internal class GgufCandidateRankerRuntimeProvider(
 }
 
 @OptIn(DelicateCoroutinesApi::class)
-private class GgufCandidateRankerRuntime(
-    private val bridge: GgufCandidateRankerNativeBridge,
+internal class GgufCandidateRankerRuntime(
+    private val nativeApi: GgufCandidateRankerNativeApi,
     initialState: Long,
     override val descriptor: CandidateRankerDescriptor,
 ) : CandidateRankerRuntime {
@@ -271,7 +294,7 @@ private class GgufCandidateRankerRuntime(
         val rightContextTokenCounts = IntArray(count)
         val diagnostics = LongArray(5)
 
-        val error = bridge.scoreNative(
+        val error = nativeApi.scoreNative(
             state = nativeState,
             leftContext = request.leftContext,
             rightContext = if (descriptor.supportsRightContext) request.rightContext else "",
@@ -304,7 +327,7 @@ private class GgufCandidateRankerRuntime(
     override fun close() {
         nativeLock.withLock {
             if (state != 0L) {
-                bridge.closeNative(state)
+                nativeApi.closeNative(state)
                 state = 0L
             }
         }
@@ -333,6 +356,12 @@ private class GgufCandidateRankerRuntime(
                 else -> CandidateRankerFailureCode.RuntimeFailure
             }
         }
+    }
+}
+
+private suspend fun loadFutoNativeLibrary() {
+    withContext(Dispatchers.Main) {
+        JniUtils.loadNativeLibrary()
     }
 }
 
