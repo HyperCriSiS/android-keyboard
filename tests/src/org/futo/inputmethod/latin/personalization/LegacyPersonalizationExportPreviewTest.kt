@@ -31,9 +31,7 @@ class LegacyPersonalizationExportPreviewTest {
             inventory = inventory,
             application = application(),
             createdAt = 10_000,
-            exportIdFactory = PersonalizationExportIdFactory {
-                "77777777-7777-4777-8777-777777777777"
-            },
+            exportIdFactory = fixedExportId(),
         )
 
         assertTrue(preview.isValid)
@@ -50,14 +48,12 @@ class LegacyPersonalizationExportPreviewTest {
     }
 
     @Test
-    fun truncatedInventoryNeverClaimsCompleteExport() {
+    fun truncatedManualInventoryNeverClaimsCompleteExport() {
         val preview = LegacyPersonalizationExportPreview.prepareManualWords(
             inventory = LegacyPersonalDictionaryInventory(emptyList(), truncated = true),
             application = application(),
             createdAt = 10_000,
-            exportIdFactory = PersonalizationExportIdFactory {
-                "77777777-7777-4777-8777-777777777777"
-            },
+            exportIdFactory = fixedExportId(),
         )
 
         assertTrue(preview.isValid)
@@ -80,14 +76,116 @@ class LegacyPersonalizationExportPreviewTest {
             inventory = LegacyPersonalDictionaryInventory(listOf(item), truncated = false),
             application = application(),
             createdAt = 10_000,
-            exportIdFactory = PersonalizationExportIdFactory {
-                "77777777-7777-4777-8777-777777777777"
-            },
+            exportIdFactory = fixedExportId(),
         )
 
         assertEquals(255, preview.preparedArchive.data.manualWords.single().frequency)
         assertTrue(preview.migrationIssues.any { it.code == "frequency_clamped" })
         assertTrue(preview.migrationIssues.any { it.code == "legacy_app_id_not_exported" })
+    }
+
+    @Test
+    fun userHistoryProducesSelfValidatedPortableArchive() {
+        val word = "wahrscheinlich"
+        val inventory = LegacyUserHistoryInventory(
+            locale = "de-DE",
+            words = listOf(
+                LegacyUserHistoryWordInventoryItem(
+                    stableId = LegacyPersonalizationIds.learnedWord("de-DE", word),
+                    word = word,
+                    evidence = historicalEvidence(
+                        probability = 204,
+                        timestampSeconds = 9,
+                        count = 8,
+                    ),
+                    isNotAWord = false,
+                    isPossiblyOffensive = false,
+                    ngrams = listOf(
+                        LegacyUserHistoryNgramInventoryItem(
+                            stableId = LegacyPersonalizationIds.learnedNgram(
+                                "de-DE",
+                                listOf("sehr"),
+                                word,
+                            ),
+                            contextTerms = listOf("sehr"),
+                            targetWord = word,
+                            evidence = historicalEvidence(
+                                probability = 153,
+                                timestampSeconds = 9,
+                                count = 4,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            truncated = false,
+            complete = true,
+        )
+
+        val preview = LegacyPersonalizationExportPreview.prepareUserHistory(
+            inventory = inventory,
+            application = application(),
+            createdAt = 10_000,
+            exportIdFactory = fixedExportId(),
+        )
+
+        assertTrue(preview.isValid)
+        assertTrue(preview.isComplete)
+        assertTrue(preview.containsApproximations)
+        assertEquals(1, preview.preparedArchive.data.learnedWords.size)
+        assertEquals(1, preview.preparedArchive.data.learnedNgrams.size)
+        assertEquals(
+            setOf(
+                PersonalizationCategory.LearnedWords,
+                PersonalizationCategory.LearnedNgrams,
+            ),
+            preview.preparedArchive.manifest.includedCategories.toSet(),
+        )
+        assertTrue(preview.preparedArchive.manifest.privacy.containsNgrams)
+        assertFalse(preview.preparedArchive.manifest.privacy.containsSentenceText)
+        assertEquals("de-DE", preview.preparedArchive.manifest.locales.single())
+        assertTrue(preview.archiveBytes.isNotEmpty())
+        assertTrue(PersonalizationArchiveInspector.inspect(preview.archiveBytes).isValid)
+    }
+
+    @Test
+    fun truncatedUserHistoryNeverClaimsCompleteExport() {
+        val preview = LegacyPersonalizationExportPreview.prepareUserHistory(
+            inventory = LegacyUserHistoryInventory(
+                locale = "de-DE",
+                words = emptyList(),
+                truncated = true,
+                complete = false,
+            ),
+            application = application(),
+            createdAt = 10_000,
+            exportIdFactory = fixedExportId(),
+        )
+
+        assertTrue(preview.isValid)
+        assertFalse(preview.isComplete)
+        assertTrue(preview.migration.sourceTruncated)
+        assertFalse(preview.migration.sourceComplete)
+    }
+
+    private fun historicalEvidence(
+        probability: Int,
+        timestampSeconds: Int,
+        count: Int,
+    ): LegacyProbabilityEvidence {
+        return LegacyProbabilityEvidence(
+            probability = probability,
+            hasHistoricalInfo = true,
+            timestampRaw = timestampSeconds,
+            levelRaw = 0,
+            countRaw = count,
+        )
+    }
+
+    private fun fixedExportId(): PersonalizationExportIdFactory {
+        return PersonalizationExportIdFactory {
+            "77777777-7777-4777-8777-777777777777"
+        }
     }
 
     private fun application(): PersonalizationExportApplication {
