@@ -8,6 +8,12 @@ This document defines how FUTO Keyboard should expose, edit, export, merge, and 
 
 Personalization data is private mutable user state. It is not part of `.futolanguage` packages.
 
+The implemented transactional local-store contract is documented separately in:
+
+```text
+docs/personalization/STORE.md
+```
+
 ## Goals
 
 - Let users inspect and correct what the keyboard learned.
@@ -139,11 +145,11 @@ The desktop tool must use the same portable schema and validation rules as Andro
 
 ## Editable source and compiled snapshot
 
-Personalization should use two representations:
+Personalization uses two representations:
 
 ### Editable source store
 
-A transactional database containing user-visible records, stable IDs, timestamps, rules, and tombstones.
+A transactional store containing user-visible records, stable IDs, timestamps, rules, and tombstones.
 
 This is the source of truth for:
 
@@ -153,11 +159,19 @@ This is the source of truth for:
 - merge;
 - rollback.
 
+The implementation on `dev` stores complete immutable generations. A generation is committed only after its staged files are synced and its directory is atomically renamed. Every writer supplies an expected generation ID, so stale writes become explicit conflicts rather than silently overwriting newer edits.
+
+Rollback copies a historical dataset into a new generation. It never rewrites old generations or moves a mutable pointer backward.
+
 ### Compiled runtime snapshot
 
-An optimized dictionary or lookup structure generated atomically from the editable source store.
+A deeply immutable and pre-indexed lookup structure generated from one committed source generation.
 
-This is used for low-latency suggestions. It may be deleted and rebuilt at any time. Runtime caches and snapshots are never exported as authoritative personal data.
+This is used for future low-latency suggestions. It may be discarded and rebuilt at any time. Runtime caches and snapshots are never exported as authoritative personal data.
+
+A held runtime generation does not change while a newer source generation is written. `PersonalizationSourceController` replaces the active runtime reference only after the new source generation has been committed, read back, validated, and compiled successfully.
+
+If runtime compilation fails after a successful source commit, the previous runtime remains active and the committed generation can be compiled again later.
 
 This separation avoids trying to use an opaque mutable binary dictionary as both the fast runtime structure and the user's editable database.
 
@@ -298,21 +312,25 @@ docs/personalization/schema/data-v0.1.schema.json
 - Imported data is never activated before complete validation.
 - A preview shows additions, changes, conflicts, and deletions.
 - Destructive imports require explicit confirmation.
-- Imports create a rollback snapshot.
+- Imports create a rollback generation.
 - Package updates cannot overwrite personal records.
 - Model output cannot directly create permanent manual words or rules.
 - Learning writes are ignored when a matching `do-not-learn` rule exists.
 - An app-specific scope is opt-in and omitted from exports by default.
+- A stale writer cannot overwrite a newer generation.
+- A corrupt newest generation does not hide an older valid generation.
+- A runtime compilation failure cannot partially replace the active runtime.
 
 ## Implementation milestones
 
-1. Portable data classes, strict codecs, schemas, and semantic validation.
-2. In-memory merge planner with conflict reporting.
-3. Read-only adapters for Android personal words and current user-history dictionaries.
-4. Debug inventory and export preview.
-5. Transactional editable source store.
-6. Compiled runtime snapshot builder.
-7. Shadow-mode parity tests against current learning.
-8. In-app learned-data browser and single-record actions.
-9. Portable import/export with rollback.
-10. Bulk editor in the separate Model Studio repository.
+1. **Implemented:** portable data classes, strict codecs, schemas, and semantic validation.
+2. **Implemented:** in-memory merge planner with conflict reporting.
+3. **Implemented:** read-only adapters for Android personal words and current user-history dictionaries.
+4. **Implemented:** Developer inventory and in-memory export preview.
+5. **Implemented:** strict `.futopersonal` archive builder and inspector.
+6. **Implemented:** transactional immutable-generation source store with recovery and rollback.
+7. **Implemented:** deeply immutable runtime snapshot builder and atomic activation controller.
+8. Shadow-mode parity tests against current learning.
+9. Normal in-app learned-data browser and transactional single-record actions.
+10. User-selected portable import/export with preview and rollback.
+11. Bulk editor in the separate Model Studio repository.
