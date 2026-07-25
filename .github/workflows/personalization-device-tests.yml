@@ -40,15 +40,22 @@ concurrency:
 
 jobs:
   instrumentation:
-    name: Run personalization tests on API 35
+    name: Run personalization tests on API ${{ matrix.api }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        api:
+          - 24
+          - 29
+          - 35
     env:
       VERSION_CODE: "1"
       VERSION_NAME: "0.0.0-ci"
       BRANCH_NAME: "dev"
-      AVD_NAME: personalization-api35
-      SYSTEM_IMAGE: system-images;android-35;default;x86_64
+      AVD_NAME: personalization-api${{ matrix.api }}
+      SYSTEM_IMAGE: system-images;android-${{ matrix.api }};default;x86_64
 
     steps:
       - name: Check out repository
@@ -74,8 +81,8 @@ jobs:
           avd_home="$RUNNER_TEMP/android-avd"
           echo "ANDROID_AVD_HOME=$avd_home" >> "$GITHUB_ENV"
           mkdir -p build/device-test-diagnostics "$avd_home"
-          printf 'workflow=%s\ncommit=%s\navdHome=%s\n' \
-            '${{ github.workflow }}' '${{ github.sha }}' "$avd_home" \
+          printf 'workflow=%s\ncommit=%s\napi=%s\navdHome=%s\n' \
+            '${{ github.workflow }}' '${{ github.sha }}' '${{ matrix.api }}' "$avd_home" \
             > build/device-test-diagnostics/workflow.txt
 
       - name: Enable KVM access
@@ -86,7 +93,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           ls -l /dev/kvm | tee build/device-test-diagnostics/kvm.txt
 
-      - name: Install API 35 emulator image
+      - name: Install API ${{ matrix.api }} emulator image
         shell: bash
         run: |
           set -o pipefail
@@ -94,7 +101,7 @@ jobs:
           sdkmanager \
             "platform-tools" \
             "emulator" \
-            "platforms;android-35" \
+            "platforms;android-${{ matrix.api }}" \
             "$SYSTEM_IMAGE" \
             > build/device-test-diagnostics/sdkmanager.log 2>&1
           echo no | avdmanager create avd \
@@ -177,7 +184,7 @@ jobs:
             echo "Last 300 Gradle log lines:"
             tail -n 300 build/device-test-diagnostics/gradle.log
           else
-            echo "Personalization instrumentation tests completed successfully."
+            echo "Personalization instrumentation tests completed successfully on API ${{ matrix.api }}."
             tail -n 100 build/device-test-diagnostics/gradle.log
           fi
           exit "$status"
@@ -194,7 +201,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: personalization-instrumentation-reports
+          name: personalization-instrumentation-reports-api${{ matrix.api }}
           path: |
             build/device-test-diagnostics/**
             build/reports/androidTests/connected/**
