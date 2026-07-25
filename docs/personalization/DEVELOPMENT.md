@@ -55,12 +55,19 @@ This document tracks the implementation boundary for inspectable and editable pe
   - per-process salted word fingerprints instead of retained text;
   - manual, learned-word, pin, preference, and block-rule findings;
   - a Developer status and event console;
+  - a versioned aggregate report format with counts, rates, latency buckets, and runtime identity;
+  - explicit exclusion of words, fingerprints, sentence context, app scopes, and persistent IDs
+    from aggregate reports;
+  - an in-memory Developer report preview;
 - instrumentation tests for codecs, validation, archives, merge behavior, edit behavior, snapshots,
   store transactions, recovery, rollback, runtime indexing, activation, migration, shadow evaluation,
-  deterministic IDs, and legacy mapping;
+  aggregate-report privacy, deterministic IDs, and legacy mapping;
+- successful execution of the personalization instrumentation suite on an Android API 35 x86_64
+  emulator: 72 tests, 72 passed, 0 failed;
 - a draft pull request used as the long-running CI and review channel;
 - successful CI compilation of `unstableDebug`, the Android test APK, Kotlin, Java, JNI, and NDK;
-- successful portable-tool tests on Windows and Ubuntu with Python 3.11 and 3.13.
+- successful portable-tool tests on Windows and Ubuntu with Python 3.11 and 3.13;
+- GitHub Actions upgraded to Node-24-native action versions.
 
 The main implementation contracts are documented in:
 
@@ -145,6 +152,8 @@ The production dictionary path remains authoritative. Shadow mode receives a bou
 
 It does not retain words, previous-word context, application IDs, touch coordinates, or sentence text. Completed events contain process-local salted fingerprints, lengths, counts, source types, rule findings, generation identity, and evaluation latency.
 
+The aggregate report is more restrictive than the event console. It contains only grouped counts, rates, runtime generations, dictionary-source categories, and fixed latency buckets. Event fingerprints and event-level details are excluded and validated as absent.
+
 The same production `SuggestionResults` instance continues into the existing FUTO transformation and autocorrection logic. No shadow finding currently suppresses, promotes, adds, or removes a candidate.
 
 ## Merge policy boundary
@@ -176,20 +185,20 @@ Observation counts from two different record IDs are not added automatically. Th
 - no personal export is written to user-selected storage;
 - no import modifies local personal data;
 - no normal settings UI lists automatic history records;
-- instrumentation tests are compiled in CI but have not yet been executed on a real device or emulator;
-- shadow events are diagnostic in-memory data and not a stable report format.
+- real-device instrumentation and sustained typing tests have not yet been performed;
+- shadow events and aggregate reports remain in-memory diagnostics rather than user-exportable files.
 
 ## Next implementation steps
 
-1. compile the current shadow implementation and Android test APK in CI;
-2. execute instrumentation tests on an emulator and at least one real device;
-3. measure typing-thread overhead, background evaluation latency, queue drops, and memory use;
-4. define a versioned privacy-reviewed shadow report with aggregate statistics and no raw text;
-5. validate a conservative mapping from legacy user-history evidence into portable learned records;
-6. collect enough shadow evidence to define manual-word, learned-word, and rule parity thresholds;
-7. add normal in-app search and transactional application of forget, never-learn, pin, and
+1. compile and execute the aggregate-report implementation on the API 35 emulator;
+2. measure typing-thread overhead, background evaluation latency, queue drops, and memory use under
+   sustained rapid typing;
+3. execute the focused suite on additional supported Android API levels and at least one real device;
+4. validate a conservative mapping from legacy user-history evidence into portable learned records;
+5. collect enough shadow evidence to define manual-word, learned-word, and rule parity thresholds;
+6. add normal in-app search and transactional application of forget, never-learn, pin, and
    pair-block actions only after those thresholds pass;
-8. add user-selected `.futopersonal` export and preview-only import;
-9. add confirmed import with rollback;
-10. start the separate Model Studio repository once package, benchmark, personalization, and
-    report contracts are stable enough to consume without Android-internal assumptions.
+7. add user-selected `.futopersonal` export and preview-only import;
+8. add confirmed import with rollback;
+9. start the separate Model Studio repository once package, benchmark, personalization, and
+   report contracts are stable enough to consume without Android-internal assumptions.
