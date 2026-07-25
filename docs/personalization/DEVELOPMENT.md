@@ -63,7 +63,7 @@ This document tracks the implementation boundary for inspectable and editable pe
   store transactions, recovery, rollback, runtime indexing, activation, migration, shadow evaluation,
   aggregate-report privacy, deterministic IDs, and legacy mapping;
 - successful execution of the personalization instrumentation suite on an Android API 35 x86_64
-  emulator: 72 tests, 72 passed, 0 failed;
+  emulator: 75 tests, 75 passed, 0 failed;
 - a draft pull request used as the long-running CI and review channel;
 - successful CI compilation of `unstableDebug`, the Android test APK, Kotlin, Java, JNI, and NDK;
 - successful portable-tool tests on Windows and Ubuntu with Python 3.11 and 3.13;
@@ -190,15 +190,14 @@ Observation counts from two different record IDs are not added automatically. Th
 
 ## Next implementation steps
 
-1. compile and execute the aggregate-report implementation on the API 35 emulator;
-2. measure typing-thread overhead, background evaluation latency, queue drops, and memory use under
+1. measure typing-thread overhead, background evaluation latency, queue drops, and memory use under
    sustained rapid typing;
-3. execute the focused suite on additional supported Android API levels and at least one real device;
-4. validate a conservative mapping from legacy user-history evidence into portable learned records;
-5. collect enough shadow evidence to define manual-word, learned-word, and rule parity thresholds;
-6. add normal in-app search and transactional application of forget, never-learn, pin, and
+2. execute the focused suite on additional supported Android API levels and at least one real device;
+3. validate a conservative mapping from legacy user-history evidence into portable learned records;
+4. collect enough shadow evidence to define manual-word, learned-word, and rule parity thresholds;
+5. add normal in-app search and transactional application of forget, never-learn, pin, and
    pair-block actions only after those thresholds pass;
-7. add user-selected `.futopersonal` export and preview-only import;
-8. add confirmed import with rollback;
-9. start the separate Model Studio repository once package, benchmark, personalization, and
+6. add user-selected `.futopersonal` export and preview-only import;
+7. add confirmed import with rollback;
+8. start the separate Model Studio repository once package, benchmark, personalization, and
    report contracts are stable enough to consume without Android-internal assumptions.
