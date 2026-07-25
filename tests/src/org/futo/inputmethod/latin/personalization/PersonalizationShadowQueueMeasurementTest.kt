@@ -7,7 +7,6 @@ import android.os.SystemClock
 import androidx.test.InstrumentationRegistry
 import androidx.test.filters.LargeTest
 import androidx.test.runner.AndroidJUnit4
-import java.io.File
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ThreadFactory
@@ -44,7 +43,11 @@ class PersonalizationShadowQueueMeasurementTest {
         assertEquals(SUSTAINED_SUBMISSIONS.toLong(), sustained.executed + sustained.dropped)
         assertTrue(sustained.maxEvaluationMicros >= sustained.averageEvaluationMicros)
 
-        File(context.cacheDir, REPORT_FILE_NAME).writeText(buildReport(forced, sustained))
+        PersonalizationMeasurementReportPublisher.publish(
+            context = context,
+            fileName = REPORT_FILE_NAME,
+            content = buildReport(forced, sustained),
+        )
     }
 
     private fun measureForcedQueueSaturation(
@@ -141,7 +144,9 @@ class PersonalizationShadowQueueMeasurementTest {
             )
             executed.incrementAndGet()
             totalEvaluationMicros.addAndGet(event.evaluationMicros)
-            maxEvaluationMicros.accumulateAndGet(event.evaluationMicros, ::maxOf)
+            maxEvaluationMicros.accumulateAndGet(event.evaluationMicros) { current, update ->
+                maxOf(current, update)
+            }
         }
     }
 
@@ -245,7 +250,7 @@ class PersonalizationShadowQueueMeasurementTest {
             append("{\n")
             append("  \"formatVersion\": \"0.1\",\n")
             append("  \"apiLevel\": ").append(Build.VERSION.SDK_INT).append(",\n")
-            append("  \"processThreadPriority\": ").append(Process.getThreadPriority(Process.myTid()))
+            append("  \"testThreadPriority\": ").append(Process.getThreadPriority(Process.myTid()))
                 .append(",\n")
             append("  \"queueCapacity\": ").append(QUEUE_CAPACITY).append(",\n")
             append("  \"forcedSaturation\": ").append(forced.toJson("  ")).append(",\n")
