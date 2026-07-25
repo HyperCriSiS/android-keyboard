@@ -3,10 +3,11 @@ package org.futo.inputmethod.latin.personalization
 import androidx.test.filters.SmallTest
 import androidx.test.runner.AndroidJUnit4
 import java.io.File
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -16,7 +17,12 @@ class PersonalizationRuntimeSnapshotTest {
     @Test
     fun compilerCopiesMutableSourcesAndIndexesRecords() {
         val sourceManualWords = PersonalizationTestFixtures.validData().manualWords.toMutableList()
-        val data = PersonalizationTestFixtures.validData().copy(manualWords = sourceManualWords)
+        val sourceTerms = mutableListOf("sehr", "wahrscheinlich")
+        val sourceData = PersonalizationTestFixtures.validData()
+        val data = sourceData.copy(
+            manualWords = sourceManualWords,
+            learnedNgrams = listOf(sourceData.learnedNgrams.single().copy(terms = sourceTerms)),
+        )
         val runtime = PersonalizationRuntimeSnapshotCompiler.compile(snapshot(data))
 
         sourceManualWords += ManualWordRecord(
@@ -29,14 +35,21 @@ class PersonalizationRuntimeSnapshotTest {
             frequency = 250,
             source = ManualWordSource.Manual,
         )
+        sourceTerms += "verändert"
 
         assertEquals(1, runtime.manualWords.size)
+        assertEquals(2, runtime.learnedNgrams.single().terms.size)
         assertEquals("FUTO", runtime.findManualWords("de-DE", "fu").single().word)
         assertEquals(
             "wahrscheinlich",
             runtime.learnedWord("de_de", "WAHRSCHEINLICH")?.word,
         )
         assertEquals(WordRuleAction.Pin, runtime.wordRule("de-DE", "futo")?.action)
+        assertUnsupportedMutation { (runtime.manualWords as MutableList).clear() }
+        assertUnsupportedMutation { (runtime.learnedNgrams.single().terms as MutableList).clear() }
+        assertUnsupportedMutation {
+            (runtime.findManualWords("de-DE") as MutableList).clear()
+        }
     }
 
     @Test
@@ -101,7 +114,7 @@ class PersonalizationRuntimeSnapshotTest {
         assertTrue(first.learnedWords.isNotEmpty())
         assertEquals(2L, second.generation)
         assertTrue(second.learnedWords.isEmpty())
-        assertSame(first, first)
+        assertTrue(first.learnedWords.isNotEmpty())
     }
 
     private fun snapshot(
@@ -109,7 +122,7 @@ class PersonalizationRuntimeSnapshotTest {
         generation: Long = 1L,
     ): PersonalizationStoreSnapshot {
         val hash = generation.toString().padStart(64, '0').takeLast(64)
-        val generationId = "%020d-%s".format(generation, hash.take(12))
+        val generationId = "%020d-%s".format(Locale.ROOT, generation, hash.take(12))
         return PersonalizationStoreSnapshot(
             generation = PersonalizationStoreGeneration(
                 storeVersion = "0.1",
@@ -123,5 +136,14 @@ class PersonalizationRuntimeSnapshotTest {
             data = data,
             generationDirectory = File("."),
         )
+    }
+
+    private fun assertUnsupportedMutation(block: () -> Unit) {
+        try {
+            block()
+            fail("Expected immutable collection mutation to fail.")
+        } catch (_: UnsupportedOperationException) {
+            // Expected.
+        }
     }
 }
