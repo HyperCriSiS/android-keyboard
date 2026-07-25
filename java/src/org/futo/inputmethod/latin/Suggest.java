@@ -450,7 +450,7 @@ public final class Suggest {
      * auto-correction when the suggestion is long and contains a space, which should avoid the
      * worst damage.
      * This function is implementing that filter. If the language enforces no such limit, then it
-     * always returns true. If the suggestion contains no space, it also always returns true. Otherwise,
+     * always returns true. If the suggestion contains no space, it also returns true. Otherwise,
      * it checks the length against the language-specific limit.
      *
      * @param info the suggestion info
