@@ -7,7 +7,7 @@ This document tracks the implementation boundary for inspectable and editable pe
 - portable `.futopersonal` architecture specification;
 - manifest and data JSON Schemas for format `0.1`;
 - Kotlin manifest and record model;
-- strict JSON codecs with `x-` extension support;
+- strict JSON codecs with `x-` extension support and required default-field encoding;
 - semantic validation for:
   - UUIDs and revisions;
   - timestamps and evidence ranges;
@@ -29,9 +29,32 @@ This document tracks the implementation boundary for inspectable and editable pe
 - bounded and cancellable binary-dictionary snapshots;
 - a read-only per-locale user-history inventory service;
 - a mapper from legacy `WordProperty` objects to transparent user-history inventory;
-- instrumentation tests for codecs, validation, merge behavior, edit behavior, snapshots,
-  deterministic IDs, and legacy mapping;
-- a draft pull request used as the long-running CI and review channel.
+- read-only Developer inventory and in-memory export-preview screens;
+- strict `.futopersonal` archive creation and inspection;
+- an immutable generation-based editable source store with:
+  - staging and atomic generation commits;
+  - operating-system and in-process locking;
+  - optimistic generation conflict detection;
+  - structured commit journals;
+  - rollback as a new generation;
+  - fallback from a corrupt newest generation;
+  - refusal to overwrite an all-corrupt store;
+  - configurable data, metadata, and journal limits;
+- a deeply immutable, pre-indexed runtime snapshot;
+- atomic store-to-runtime activation through `PersonalizationSourceController`;
+- retention of the previous runtime when compilation of a committed generation fails;
+- instrumentation tests for codecs, validation, archives, merge behavior, edit behavior, snapshots,
+  store transactions, recovery, rollback, runtime indexing, activation, deterministic IDs, and
+  legacy mapping;
+- a draft pull request used as the long-running CI and review channel;
+- successful CI compilation of `unstableDebug`, the Android test APK, Kotlin, Java, JNI, and NDK;
+- successful portable-tool tests on Windows and Ubuntu with Python 3.11 and 3.13.
+
+The transactional store contract is documented in:
+
+```text
+docs/personalization/STORE.md
+```
 
 ## Existing storage sources
 
@@ -87,6 +110,18 @@ The edit planner is pure and does not modify current production dictionaries. It
 
 Every edit validates its output before returning. The same operations can therefore be used by the Android UI and the future Model Studio.
 
+## Transaction and runtime boundary
+
+The editable store uses immutable numbered generations. There is no mutable current-pointer file. A new generation becomes visible only after its complete staging directory has been flushed and atomically renamed.
+
+Every writer supplies the generation ID it read. A stale writer receives a conflict and must rebuild its edit against the new current generation.
+
+Rollback copies an older dataset into a new generation instead of changing history. If the newest generation is corrupt, the newest older valid generation is selected and the damaged generation number remains reserved.
+
+The runtime snapshot is a deeply immutable and pre-indexed copy of one committed generation. The source controller replaces the active runtime reference only after persistence, read-back validation, and runtime compilation all succeed.
+
+If runtime compilation fails after persistence, the previous runtime remains active and the committed generation can be compiled again later.
+
 ## Merge policy boundary
 
 The current merge planner automatically resolves only unambiguous cases:
@@ -112,19 +147,22 @@ Observation counts from two different record IDs are not added automatically. Th
 - no existing user-history file is rewritten;
 - no portable record is used for live suggestions;
 - edit plans are not applied to current runtime dictionaries;
+- the new source controller is not connected to the production suggestion pipeline;
 - no `do-not-learn` or correction rule affects typing yet;
 - no personal export is written to user-selected storage;
 - no import modifies local personal data;
-- no normal settings UI lists automatic history records yet.
+- no normal settings UI lists automatic history records yet;
+- instrumentation tests are compiled in CI but have not yet been executed on a real device or emulator.
 
 ## Next implementation steps
 
-1. add a Developer screen showing manual and automatic inventory by locale;
-2. export a preview-only `.futopersonal` archive;
-3. design the transactional editable source store;
-4. compile a runtime snapshot from that store;
-5. compare current and new learning in shadow mode;
+1. create a migration plan from manual Android personal words into a separate experimental store;
+2. expose source-store generations and recovery status in a Developer-only screen;
+3. compile the experimental runtime snapshot beside the current dictionaries;
+4. compare current and new personalization decisions in shadow mode;
+5. define parity and rollback acceptance thresholds;
 6. add normal in-app search and transactional application of forget, never-learn, pin, and
-   pair-block actions;
-7. add import/export with rollback;
-8. implement bulk editing in the separate Model Studio repository.
+   pair-block actions only after shadow-mode validation;
+7. add user-selected `.futopersonal` export and preview-only import;
+8. add confirmed import with rollback;
+9. implement bulk editing in the separate Model Studio repository.
