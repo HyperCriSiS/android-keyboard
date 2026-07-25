@@ -1,0 +1,255 @@
+{
+  "formatVersion": "0.1",
+  "id": "org.futo.example.german-correction",
+  "name": "German correction safety example",
+  "description": "Small illustrative suite for validating ranking, autocorrect safety, and benchmark tooling. It is not a representative quality benchmark.",
+  "languageTags": [
+    "de",
+    "de-DE"
+  ],
+  "license": "CC0-1.0",
+  "cases": [
+    {
+      "id": "replace-warscheinlich",
+      "languageTag": "de-DE",
+      "layout": "qwertz",
+      "leftContext": "Das ist",
+      "typedText": " warscheinlich",
+      "rightContext": " richtig.",
+      "expectation": {
+        "action": "replace",
+        "acceptableTexts": [
+          " wahrscheinlich"
+        ]
+      },
+      "candidates": [
+        {
+          "id": "typed",
+          "text": " warscheinlich",
+          "isTypedText": true,
+          "generatorConfidence": 0.32,
+          "editRisk": 0.0,
+          "frequencyConfidence": 0.15,
+          "isExactDictionaryMatch": false
+        },
+        {
+          "id": "wahrscheinlich",
+          "text": " wahrscheinlich",
+          "isTypedText": false,
+          "generatorConfidence": 0.95,
+          "editRisk": 0.16,
+          "frequencyConfidence": 0.92,
+          "isExactDictionaryMatch": true
+        },
+        {
+          "id": "anscheinlich",
+          "text": " anscheinlich",
+          "isTypedText": false,
+          "generatorConfidence": 0.38,
+          "editRisk": 0.48,
+          "frequencyConfidence": 0.70,
+          "isExactDictionaryMatch": true
+        }
+      ],
+      "tags": [
+        "common-typo",
+        "missing-letter"
+      ]
+    },
+    {
+      "id": "keep-seit",
+      "languageTag": "de-DE",
+      "layout": "qwertz",
+      "leftContext": "Ich bin",
+      "typedText": " seit",
+      "rightContext": " gestern hier.",
+      "expectation": {
+        "action": "keep",
+        "acceptableTexts": [
+          " seit"
+        ]
+      },
+      "candidates": [
+        {
+          "id": "typed",
+          "text": " seit",
+          "isTypedText": true,
+          "generatorConfidence": 0.91,
+          "editRisk": 0.0,
+          "frequencyConfidence": 0.89,
+          "isExactDictionaryMatch": true
+        },
+        {
+          "id": "seid",
+          "text": " seid",
+          "isTypedText": false,
+          "generatorConfidence": 0.66,
+          "editRisk": 0.25,
+          "frequencyConfidence": 0.76,
+          "isExactDictionaryMatch": true
+        }
+      ],
+      "tags": [
+        "valid-word",
+        "confusable",
+        "false-correction-risk"
+      ]
+    },
+    {
+      "id": "replace-seit-with-seid",
+      "languageTag": "de-DE",
+      "layout": "qwertz",
+      "leftContext": "Ihr",
+      "typedText": " seit",
+      "rightContext": " heute früh dran.",
+      "expectation": {
+        "action": "replace",
+        "acceptableTexts": [
+          " seid"
+        ]
+      },
+      "candidates": [
+        {
+          "id": "typed",
+          "text": " seit",
+          "isTypedText": true,
+          "generatorConfidence": 0.76,
+          "editRisk": 0.0,
+          "frequencyConfidence": 0.89,
+          "isExactDictionaryMatch": true
+        },
+        {
+          "id": "seid",
+          "text": " seid",
+          "isTypedText": false,
+          "generatorConfidence": 0.78,
+          "editRisk": 0.24,
+          "frequencyConfidence": 0.76,
+          "isExactDictionaryMatch": true
+        }
+      ],
+      "tags": [
+        "valid-word",
+        "confusable",
+        "context-required"
+      ]
+    },
+    {
+      "id": "keep-das",
+      "languageTag": "de-DE",
+      "layout": "qwertz",
+      "leftContext": "Ich weiß,",
+      "typedText": " das",
+      "rightContext": " ist richtig.",
+      "expectation": {
+        "action": "keep",
+        "acceptableTexts": [
+          " das"
+        ]
+      },
+      "candidates": [
+        {
+          "id": "typed",
+          "text": " das",
+          "isTypedText": true,
+          "generatorConfidence": 0.93,
+          "editRisk": 0.0,
+          "frequencyConfidence": 0.96,
+          "isExactDictionaryMatch": true
+        },
+        {
+          "id": "dass",
+          "text": " dass",
+          "isTypedText": false,
+          "generatorConfidence": 0.64,
+          "editRisk": 0.22,
+          "frequencyConfidence": 0.90,
+          "isExactDictionaryMatch": true
+        }
+      ],
+      "tags": [
+        "valid-word",
+        "confusable",
+        "false-correction-risk"
+      ]
+    },
+    {
+      "id": "replace-im-with-ihm",
+      "languageTag": "de-DE",
+      "layout": "qwertz",
+      "leftContext": "Ich helfe",
+      "typedText": " im",
+      "rightContext": " morgen.",
+      "expectation": {
+        "action": "replace",
+        "acceptableTexts": [
+          " ihm"
+        ]
+      },
+      "candidates": [
+        {
+          "id": "typed",
+          "text": " im",
+          "isTypedText": true,
+          "generatorConfidence": 0.84,
+          "editRisk": 0.0,
+          "frequencyConfidence": 0.94,
+          "isExactDictionaryMatch": true
+        },
+        {
+          "id": "ihm",
+          "text": " ihm",
+          "isTypedText": false,
+          "generatorConfidence": 0.74,
+          "editRisk": 0.28,
+          "frequencyConfidence": 0.83,
+          "isExactDictionaryMatch": true
+        }
+      ],
+      "tags": [
+        "valid-word",
+        "confusable",
+        "right-context"
+      ]
+    },
+    {
+      "id": "keep-war",
+      "languageTag": "de-DE",
+      "layout": "qwertz",
+      "leftContext": "Das",
+      "typedText": " war",
+      "rightContext": " gestern anders.",
+      "expectation": {
+        "action": "keep",
+        "acceptableTexts": [
+          " war"
+        ]
+      },
+      "candidates": [
+        {
+          "id": "typed",
+          "text": " war",
+          "isTypedText": true,
+          "generatorConfidence": 0.92,
+          "editRisk": 0.0,
+          "frequencyConfidence": 0.96,
+          "isExactDictionaryMatch": true
+        },
+        {
+          "id": "was",
+          "text": " was",
+          "isTypedText": false,
+          "generatorConfidence": 0.70,
+          "editRisk": 0.25,
+          "frequencyConfidence": 0.95,
+          "isExactDictionaryMatch": true
+        }
+      ],
+      "tags": [
+        "valid-word",
+        "confusable",
+        "false-correction-risk"
+      ]
+    }
+  ]
+}

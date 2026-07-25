@@ -31,9 +31,15 @@ public:
     int getVocabSize() const;
     const char *getToken(int id) const;
     bool eval(int nPast, token_sequence input, std::vector<float> &outLogits);
-    std::vector<int> tokenize(const char *text);
-    int tokenToId(const char *text);
+    std::vector<int> tokenize(const char *text, bool addBos = false, bool special = false) const;
+    int tokenToId(const char *text) const;
     std::string decode(const token_sequence &tokens) const;
+
+    llama_token bosToken() const;
+    llama_token eosToken() const;
+    bool modelAddsBosByDefault() const;
+    bool modelAddsEosByDefault() const;
+    bool usesExternalSentencePiece() const;
 
     static LanguageModel *createLanguageModel(const std::string &paths);
     llama_context *context{};
@@ -59,6 +65,7 @@ private:
     LlamaAdapter();
 
     sentencepiece::SentencePieceProcessor spm;
+    mutable std::string tokenTextBuffer;
 };
 
 
@@ -67,11 +74,17 @@ public:
     explicit LanguageModel(LlamaAdapter *adapter);
 
     // Tokenizes the given text to tokens
-    AK_FORCE_INLINE std::vector<int> tokenize(const char *text) const {
-        return adapter->tokenize(text);
+    AK_FORCE_INLINE std::vector<int> tokenize(
+            const char *text,
+            bool addBos = false,
+            bool special = false) const {
+        return adapter->tokenize(text, addBos, special);
     }
-    AK_FORCE_INLINE std::vector<int> tokenize(const std::string &text) const {
-        return tokenize(text.c_str());
+    AK_FORCE_INLINE std::vector<int> tokenize(
+            const std::string &text,
+            bool addBos = false,
+            bool special = false) const {
+        return tokenize(text.c_str(), addBos, special);
     }
     AK_FORCE_INLINE int tokenToId(const char *text) const {
         return adapter->tokenToId(text);
@@ -79,6 +92,26 @@ public:
 
     AK_FORCE_INLINE std::string decode(const token_sequence &tokens) const {
         return adapter->decode(tokens);
+    }
+
+    AK_FORCE_INLINE llama_token bosToken() const {
+        return adapter->bosToken();
+    }
+
+    AK_FORCE_INLINE llama_token eosToken() const {
+        return adapter->eosToken();
+    }
+
+    AK_FORCE_INLINE bool modelAddsBosByDefault() const {
+        return adapter->modelAddsBosByDefault();
+    }
+
+    AK_FORCE_INLINE bool modelAddsEosByDefault() const {
+        return adapter->modelAddsEosByDefault();
+    }
+
+    AK_FORCE_INLINE bool usesExternalSentencePiece() const {
+        return adapter->usesExternalSentencePiece();
     }
 
     // Fast forward the context

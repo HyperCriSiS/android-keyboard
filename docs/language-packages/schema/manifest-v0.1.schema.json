@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keyboard.futo.org/schemas/language-package/manifest-v0.1.schema.json",
+  "title": "FUTO Language Package Manifest 0.1",
+  "type": "object",
+  "required": ["formatVersion", "package", "components"],
+  "properties": {
+    "formatVersion": { "const": "0.1" },
+    "package": { "$ref": "#/$defs/packageInfo" },
+    "components": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/component" }
+    },
+    "profiles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/profile" },
+      "default": []
+    },
+    "defaultProfile": { "$ref": "#/$defs/localId" },
+    "resources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/resource" },
+      "default": []
+    }
+  },
+  "patternProperties": { "^x-": true },
+  "additionalProperties": false,
+  "$defs": {
+    "globalId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)+$"
+    },
+    "localId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+    },
+    "runtimeId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "languageTag": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 35,
+      "pattern": "^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "author": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "url": { "type": "string", "format": "uri" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "packageInfo": {
+      "type": "object",
+      "required": ["id", "name", "version", "kind", "authors", "license", "languages"],
+      "properties": {
+        "id": { "$ref": "#/$defs/globalId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "version": { "$ref": "#/$defs/semver" },
+        "kind": { "enum": ["bundle", "component", "profile"] },
+        "authors": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/author" }
+        },
+        "license": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "sourceUrl": { "type": "string", "format": "uri" },
+        "homepageUrl": { "type": "string", "format": "uri" },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/languageTag" }
+        }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "componentKind": {
+      "enum": [
+        "dictionary",
+        "language-rules",
+        "candidate-generator",
+        "context-ranker",
+        "correction-model",
+        "swipe-model",
+        "personalization-adapter"
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "default": []
+        },
+        "optional": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "default": []
+        }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "minKeyboardApi": { "type": "integer", "minimum": 1 },
+        "maxKeyboardApi": { "type": "integer", "minimum": 1 },
+        "androidAbis": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"] }
+        },
+        "minRamMb": { "type": "integer", "minimum": 0 },
+        "runtimeFeatures": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+        }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "runtimeBinding": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/runtimeId" },
+        "apiVersion": { "type": "integer", "minimum": 1, "default": 1 },
+        "parameters": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": true
+        }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "required": ["path", "mediaType", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "$ref": "#/$defs/relativePath" },
+        "mediaType": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "componentReference": {
+      "type": "object",
+      "required": ["componentId"],
+      "properties": {
+        "packageId": { "$ref": "#/$defs/globalId" },
+        "componentId": { "$ref": "#/$defs/localId" },
+        "versionRange": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "required": { "type": "boolean", "default": true },
+        "weight": { "type": "number", "minimum": 0, "maximum": 100, "default": 1 }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "component": {
+      "type": "object",
+      "required": ["id", "name", "version", "kind", "activation", "languages", "tasks", "payload"],
+      "properties": {
+        "id": { "$ref": "#/$defs/localId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "version": { "$ref": "#/$defs/semver" },
+        "kind": { "$ref": "#/$defs/componentKind" },
+        "activation": { "enum": ["stackable", "exclusive"] },
+        "priority": { "type": "integer", "minimum": -100000, "maximum": 100000, "default": 0 },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/languageTag" }
+        },
+        "layouts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "default": []
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "capabilities": { "$ref": "#/$defs/capabilities" },
+        "compatibility": { "$ref": "#/$defs/compatibility" },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/componentReference" },
+          "default": []
+        },
+        "runtime": { "$ref": "#/$defs/runtimeBinding" },
+        "payload": { "$ref": "#/$defs/payload" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "profileSelection": {
+      "type": "object",
+      "required": ["slot", "strategy", "components"],
+      "properties": {
+        "slot": { "$ref": "#/$defs/componentKind" },
+        "strategy": { "enum": ["replace", "append"] },
+        "components": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/componentReference" }
+        }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "profile": {
+      "type": "object",
+      "required": ["id", "name", "selections"],
+      "properties": {
+        "id": { "$ref": "#/$defs/localId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "selections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/profileSelection" }
+        }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "resource": {
+      "type": "object",
+      "required": ["path", "mediaType", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "$ref": "#/$defs/relativePath" },
+        "mediaType": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "role": {
+          "enum": ["benchmark", "license", "notice", "thumbnail", "documentation", "signature"]
+        }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    }
+  }
+}

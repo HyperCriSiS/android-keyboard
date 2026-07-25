@@ -1,0 +1,191 @@
+{
+  "formatVersion": "0.1",
+  "package": {
+    "id": "org.futo.community.german.standard",
+    "name": "German Community Standard",
+    "description": "Example bundle combining a German dictionary, language rules, and a context ranker.",
+    "version": "0.1.0",
+    "kind": "bundle",
+    "authors": [
+      {
+        "name": "FUTO Keyboard Community"
+      }
+    ],
+    "license": "Mixed; see licenses/NOTICE.txt",
+    "languages": [
+      "de",
+      "de-DE",
+      "de-AT",
+      "de-CH"
+    ]
+  },
+  "components": [
+    {
+      "id": "general-dictionary",
+      "name": "German General Dictionary",
+      "version": "1.0.0",
+      "kind": "dictionary",
+      "activation": "stackable",
+      "priority": 0,
+      "languages": [
+        "de"
+      ],
+      "layouts": [
+        "qwertz"
+      ],
+      "tasks": [
+        "dictionary-lookup-v1"
+      ],
+      "capabilities": {
+        "required": [
+          "unicode-graphemes"
+        ],
+        "optional": [
+          "word-frequency"
+        ]
+      },
+      "payload": {
+        "path": "components/dictionary.dict",
+        "mediaType": "application/vnd.futo.keyboard.dictionary",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "sizeBytes": 24576000
+      }
+    },
+    {
+      "id": "core-rules",
+      "name": "German Core Rules",
+      "version": "1.0.0",
+      "kind": "language-rules",
+      "activation": "stackable",
+      "priority": 10,
+      "languages": [
+        "de"
+      ],
+      "layouts": [
+        "qwertz",
+        "qwerty"
+      ],
+      "tasks": [
+        "german-compounding-v1",
+        "capitalization-rules-v1"
+      ],
+      "payload": {
+        "path": "components/rules.json",
+        "mediaType": "application/vnd.futo.keyboard.rules+json",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "sizeBytes": 98304
+      }
+    },
+    {
+      "id": "ranker-small",
+      "name": "German Context Ranker Small",
+      "version": "0.1.0",
+      "kind": "context-ranker",
+      "activation": "exclusive",
+      "languages": [
+        "de"
+      ],
+      "layouts": [
+        "qwertz",
+        "qwerty"
+      ],
+      "tasks": [
+        "candidate-ranking-v1"
+      ],
+      "capabilities": {
+        "required": [
+          "full-candidate-logprob",
+          "unicode-graphemes",
+          "offline-only"
+        ]
+      },
+      "compatibility": {
+        "minKeyboardApi": 2,
+        "androidAbis": [
+          "arm64-v8a",
+          "x86_64"
+        ],
+        "minRamMb": 512,
+        "runtimeFeatures": [
+          "gguf-causal-lm-v1"
+        ]
+      },
+      "runtime": {
+        "id": "gguf-causal-ranker",
+        "apiVersion": 1,
+        "parameters": {
+          "boundaryMode": "leading-separator",
+          "maxContextTokens": 256,
+          "maxBatchSize": 16,
+          "supportsRightContext": true,
+          "bosPolicy": "model-default",
+          "addEos": false,
+          "contextTruncation": "keep-last"
+        }
+      },
+      "payload": {
+        "path": "components/ranker.gguf",
+        "mediaType": "application/vnd.futo.keyboard.model+gguf",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "sizeBytes": 50331648
+      }
+    }
+  ],
+  "profiles": [
+    {
+      "id": "standard",
+      "name": "Standard",
+      "description": "Recommended balance of correction quality, latency, and memory use.",
+      "selections": [
+        {
+          "slot": "dictionary",
+          "strategy": "append",
+          "components": [
+            {
+              "componentId": "general-dictionary",
+              "required": true
+            }
+          ]
+        },
+        {
+          "slot": "language-rules",
+          "strategy": "append",
+          "components": [
+            {
+              "componentId": "core-rules",
+              "required": true
+            }
+          ]
+        },
+        {
+          "slot": "context-ranker",
+          "strategy": "replace",
+          "components": [
+            {
+              "componentId": "ranker-small",
+              "required": true,
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultProfile": "standard",
+  "resources": [
+    {
+      "path": "licenses/NOTICE.txt",
+      "mediaType": "text/plain",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "sizeBytes": 4096,
+      "role": "notice"
+    },
+    {
+      "path": "benchmarks/results.json",
+      "mediaType": "application/vnd.futo.keyboard.benchmark+json",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "sizeBytes": 32768,
+      "role": "benchmark"
+    }
+  ]
+}

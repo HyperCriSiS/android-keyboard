@@ -60,7 +60,6 @@ import org.futo.inputmethod.updates.DISABLE_UPDATE_REMINDER
 import org.futo.inputmethod.updates.dismissedMigrateUpdateNotice
 import kotlin.system.exitProcess
 
-
 val IS_DEVELOPER = SettingsKey(booleanPreferencesKey("isDeveloperMode"), false)
 
 @OptIn(DebugOnly::class)
@@ -69,14 +68,11 @@ fun DevKeyboardScreen(navController: NavHostController = rememberNavController()
     Box {
         ScrollableList {
             ScreenTitle("Keyboard screen", showBack = true, navController)
-
             AndroidTextInput()
         }
         UixManagerInstanceForDebug?.Content()
     }
 }
-
-
 
 private fun triggerImportTheme(context: Context) {
     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -94,9 +90,7 @@ fun DevThemeImportScreen(navController: NavHostController = rememberNavControlle
     val context = LocalContext.current
     DisposableEffect(Unit) {
         DevAutoAcceptThemeImport = true
-        onDispose {
-            DevAutoAcceptThemeImport = false
-        }
+        onDispose { DevAutoAcceptThemeImport = false }
     }
     Box {
         ScrollableList {
@@ -111,7 +105,6 @@ fun DevThemeImportScreen(navController: NavHostController = rememberNavControlle
                     UixManagerInstanceForDebug?.onActionActivated(BugViewerAction)
                 }) { Text("Bugviewer") }
             }
-
             AndroidTextInput()
         }
     }
@@ -127,92 +120,113 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
         ScreenTitle("Developer", showBack = true, navController)
 
         SettingToggleDataStore(title = "Developer mode", setting = IS_DEVELOPER)
-
         CrashLoggingApplication.CopyLogsOption()
-
         SettingToggleDataStore(title = "Disable all update reminders", setting = DISABLE_UPDATE_REMINDER)
-        
+
         SettingToggleDataStore(
             title = "Touch typing mode",
             subtitle = "Hides all keys. Touch typists only! Recommended to disable emoji key and enable key borders",
-            setting = HiddenKeysSetting
+            setting = HiddenKeysSetting,
         )
 
         SettingToggleDataStore(title = "Dismissed migration notice", setting = dismissedMigrateUpdateNotice)
-
         SettingToggleDataStore(title = "Old action bar", setting = OldStyleActionsBar)
 
         NavigationItem(
             title = "Text edit variations",
             style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("devtextedit") }
+            navigate = { navController.navigate("devtextedit") },
         )
         NavigationItem(
             title = "Layout list",
             style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("devlayouts") }
+            navigate = { navController.navigate("devlayouts") },
         )
         NavigationItem(
             title = "Custom layouts",
             style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("devlayouteditor") }
+            navigate = { navController.navigate("devlayouteditor") },
         )
         NavigationItem(
             title = "Theme dev utility",
             style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("devtheme") }
+            navigate = { navController.navigate("devtheme") },
         )
+        if (BuildConfig.DEBUG) {
+            NavigationItem(
+                title = "Language package inspector",
+                subtitle = "Validate and install .futolanguage packages without activating components",
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("devlanguagepackage") },
+            )
+            NavigationItem(
+                title = "Language package registry",
+                subtitle = "Inspect resolution plans and probe installed candidate rankers",
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("devlanguagepackageregistry") },
+            )
+            NavigationItem(
+                title = "Personalization inventory",
+                subtitle = "Read-only view of manual words and automatic user history",
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("devpersonalizationinventory") },
+            )
+            NavigationItem(
+                title = "Personalization export preview",
+                subtitle = "Build and validate an in-memory manual-word .futopersonal archive",
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("devpersonalizationexportpreview") },
+            )
+        }
 
         SettingToggleDataStore(
             title = "Allow transformer models on non QWERTY layouts",
-            setting = AllowTransformerOnNonQWERTYLayouts
+            setting = AllowTransformerOnNonQWERTYLayouts,
         )
-
 
         ScreenTitle("Text input debug")
         SettingToggleDataStore(
             title = "Text input alt. composition",
-            setting = TextInputAlternativeIC
+            setting = TextInputAlternativeIC,
         )
         SettingToggleDataStore(
             title = "Use buffering",
             setting = TextInputBufferedIC,
-            disabled = useDataStoreValue(TextInputAlternativeIC) == false
+            disabled = useDataStoreValue(TextInputAlternativeIC) == false,
         )
         SettingToggleDataStore(
             title = "Use setComposingRegion",
             setting = TextInputAlternativeICComposing,
-            disabled = useDataStoreValue(TextInputAlternativeIC) == false
+            disabled = useDataStoreValue(TextInputAlternativeIC) == false,
         )
 
         NavigationItem(
             title = "Buggy text edit variations",
             style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("devbuggytextedit") }
+            navigate = { navController.navigate("devbuggytextedit") },
         )
 
         ScreenTitle("Voice input debug")
         SettingToggleDataStore(
             title = "Voice input alt. composition",
-            setting = VoiceInputAlternativeIC
+            setting = VoiceInputAlternativeIC,
         )
-
         SettingToggleDataStore(
             title = "Use setComposingRegion",
             setting = VoiceInputAlternativeICComposing,
-            disabled = useDataStoreValue(VoiceInputAlternativeIC) == false
+            disabled = useDataStoreValue(VoiceInputAlternativeIC) == false,
         )
 
         ScreenTitle("Swipe debug")
         SettingToggleDataStore(
             title = "Special decoder",
             subtitle = "default = yes",
-            setting = SwipeSpecialDecoderSetting
+            setting = SwipeSpecialDecoderSetting,
         )
         SettingToggleDataStore(
             title = "Language model",
             subtitle = "default = yes",
-            setting = SwipeLanguageModelSetting
+            setting = SwipeLanguageModelSetting,
         )
         NavigationItem(
             title = "Activate swipe debug logging for 5 minutes",
@@ -220,11 +234,10 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
             style = NavigationItemStyle.MiscNoArrow,
             navigate = {
                 SwipeDecoderDictionary.debugLogUntil = System.currentTimeMillis() + 5L * 60L * 1000L
-            }
+            },
         )
 
         ScreenTitle(title = "Payment stuff")
-
         SettingToggleDataStore(title = "Is paid", setting = IS_ALREADY_PAID)
         SettingToggleDataStore(title = "Is payment pending", setting = IS_PAYMENT_PENDING)
         SettingToggleDataStore(title = "Has seen paid notice", setting = HAS_SEEN_PAID_NOTICE)
@@ -232,7 +245,6 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
 
         val reminder = useDataStore(NOTICE_REMINDER_TIME)
         val currTime = System.currentTimeMillis() / 1000L
-
         val subtitleValue = if (reminder.value > currTime) {
             val diffDays = (reminder.value - currTime) / 60.0 / 60.0 / 24.0
             "Reminding in ${"%.2f".format(diffDays)} days"
@@ -243,13 +255,11 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
             "Reminder Time",
             reminder.value > currTime,
             {
-                if (!it) {
-                    reminder.setValue(0L)
-                }
+                if (!it) reminder.setValue(0L)
             },
             subtitleValue,
             reminder.value <= currTime,
-            { }
+            { },
         )
 
         val licenseKey = useDataStore(EXT_LICENSE_KEY)
@@ -257,13 +267,11 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
             "Ext License Key",
             licenseKey.value != EXT_LICENSE_KEY.default,
             {
-                if(!it) {
-                    licenseKey.setValue(EXT_LICENSE_KEY.default)
-                }
+                if (!it) licenseKey.setValue(EXT_LICENSE_KEY.default)
             },
             licenseKey.value,
             licenseKey.value == EXT_LICENSE_KEY.default,
-            { }
+            { },
         )
 
         ScreenTitle(title = "Here be dragons")
@@ -272,7 +280,7 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
             UseExpandableSuggestionsForGeneralIME,
         )
 
-        if(!BuildConfig.IS_PLAYSTORE_BUILD) {
+        if (!BuildConfig.IS_PLAYSTORE_BUILD) {
             NavigationItem(
                 title = "Crash the app",
                 style = NavigationItemStyle.MiscNoArrow,
@@ -284,10 +292,10 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
                         }
                     }
                 },
-                icon = painterResource(id = R.drawable.close)
+                icon = painterResource(id = R.drawable.close),
             )
 
-            if(BuildConfig.DEBUG) {
+            if (BuildConfig.DEBUG) {
                 NavigationItem(
                     title = "Corrupt the settings, the clipboard, and exit the app",
                     style = NavigationItemStyle.MiscNoArrow,
@@ -295,18 +303,12 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
                         scope.lifecycleScope.launch {
                             withContext(Dispatchers.Default) {
                                 delay(300L)
-
-                                context.getPreferencesDataStoreFile().outputStream().use {
-                                    it.write(0)
-                                }
-                                context.clipboardFile.outputStream().use {
-                                    it.write(0)
-                                }
-
+                                context.getPreferencesDataStoreFile().outputStream().use { it.write(0) }
+                                context.clipboardFile.outputStream().use { it.write(0) }
                                 exitProcess(1)
                             }
                         }
-                    }
+                    },
                 )
             }
 
@@ -314,9 +316,8 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
                 title = "Inline Keyboard",
                 subtitle = "This can break everything, force stop or crash the app to fix",
                 style = NavigationItemStyle.Misc,
-                navigate = { navController.navigate("devkeyboard") }
+                navigate = { navController.navigate("devkeyboard") },
             )
-
         }
     }
 }

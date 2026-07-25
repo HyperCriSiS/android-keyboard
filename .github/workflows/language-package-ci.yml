@@ -1,0 +1,129 @@
+name: Language and personalization CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/language-package-ci.yml"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "java/src/org/futo/inputmethod/latin/Suggest.java"
+      - "java/src/org/futo/inputmethod/latin/languagepack/**"
+      - "java/src/org/futo/inputmethod/latin/personalization/**"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/SettingsNavigator.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageInspector.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageRegistry.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationInventory.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationExportPreview.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationStore.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationShadowMode.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevSettings.kt"
+      - "native/jni/**"
+      - "tests/src/org/futo/inputmethod/latin/languagepack/**"
+      - "tests/src/org/futo/inputmethod/latin/personalization/**"
+      - "tools/language-packages/**"
+      - "docs/language-packages/**"
+      - "docs/personalization/**"
+  pull_request:
+    paths:
+      - ".github/workflows/language-package-ci.yml"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "java/src/org/futo/inputmethod/latin/Suggest.java"
+      - "java/src/org/futo/inputmethod/latin/languagepack/**"
+      - "java/src/org/futo/inputmethod/latin/personalization/**"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/SettingsNavigator.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageInspector.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageRegistry.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationInventory.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationExportPreview.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationStore.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationShadowMode.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevSettings.kt"
+      - "native/jni/**"
+      - "tests/src/org/futo/inputmethod/latin/languagepack/**"
+      - "tests/src/org/futo/inputmethod/latin/personalization/**"
+      - "tools/language-packages/**"
+      - "docs/language-packages/**"
+      - "docs/personalization/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: language-personalization-ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: Compile unstable debug and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERSION_CODE: "1"
+      VERSION_NAME: "0.0.0-ci"
+      BRANCH_NAME: "dev"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Validate portable package builder
+        run: |
+          python3 -m py_compile tools/language-packages/create-example-package.py
+          python3 tools/language-packages/create-example-package.py build/language-packages/ci-example.futolanguage
+          test -s build/language-packages/ci-example.futolanguage
+
+      - name: Compile application and instrumentation tests
+        id: gradle-build
+        shell: bash
+        run: |
+          chmod +x gradlew
+          set +e
+          ./gradlew \
+            assembleUnstableDebug \
+            assembleUnstableDebugAndroidTest \
+            --stacktrace \
+            --no-daemon \
+            > gradle-build.log 2>&1
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo "Gradle build failed. Relevant diagnostics:"
+            grep -nE '(^e: | error: |CMake Error|FAILED|FAILURE:|What went wrong:|Execution failed)' \
+              gradle-build.log | tail -n 250 || true
+            echo "Last 250 log lines:"
+            tail -n 250 gradle-build.log
+          else
+            echo "Gradle build completed successfully."
+            tail -n 80 gradle-build.log
+          fi
+          exit "$status"
+
+      - name: Upload complete Gradle log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gradle-build-log
+          path: gradle-build.log
+          if-no-files-found: error
+          retention-days: 14

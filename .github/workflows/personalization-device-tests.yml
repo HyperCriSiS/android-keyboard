@@ -1,0 +1,270 @@
+name: Personalization device tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/personalization-device-tests.yml"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "common/src/**"
+      - "java/src/org/futo/inputmethod/latin/ExpandableBinaryDictionarySnapshotReader.java"
+      - "java/src/org/futo/inputmethod/latin/Suggest.java"
+      - "java/src/org/futo/inputmethod/latin/personalization/**"
+      - "tests/src/org/futo/inputmethod/latin/personalization/**"
+      - "tests/src/org/futo/inputmethod/latin/ExpandableBinaryDictionarySnapshotReaderTest.java"
+      - "native/jni/**"
+  pull_request:
+    paths:
+      - ".github/workflows/personalization-device-tests.yml"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "common/src/**"
+      - "java/src/org/futo/inputmethod/latin/ExpandableBinaryDictionarySnapshotReader.java"
+      - "java/src/org/futo/inputmethod/latin/Suggest.java"
+      - "java/src/org/futo/inputmethod/latin/personalization/**"
+      - "tests/src/org/futo/inputmethod/latin/personalization/**"
+      - "tests/src/org/futo/inputmethod/latin/ExpandableBinaryDictionarySnapshotReaderTest.java"
+      - "native/jni/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personalization-device-tests-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  instrumentation:
+    name: Run personalization tests on API ${{ matrix.api }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        api:
+          - 24
+          - 29
+          - 35
+    env:
+      VERSION_CODE: "1"
+      VERSION_NAME: "0.0.0-ci"
+      BRANCH_NAME: "dev"
+      AVD_NAME: personalization-api${{ matrix.api }}
+      SYSTEM_IMAGE: system-images;android-${{ matrix.api }};default;x86_64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Prepare diagnostic and AVD directories
+        shell: bash
+        run: |
+          avd_home="$RUNNER_TEMP/android-avd"
+          echo "ANDROID_AVD_HOME=$avd_home" >> "$GITHUB_ENV"
+          mkdir -p build/device-test-diagnostics "$avd_home"
+          printf 'workflow=%s\ncommit=%s\napi=%s\navdHome=%s\n' \
+            '${{ github.workflow }}' '${{ github.sha }}' '${{ matrix.api }}' "$avd_home" \
+            > build/device-test-diagnostics/workflow.txt
+
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm | tee build/device-test-diagnostics/kvm.txt
+
+      - name: Install API ${{ matrix.api }} emulator image
+        shell: bash
+        run: |
+          set -o pipefail
+          yes | sdkmanager --licenses > build/device-test-diagnostics/licenses.log 2>&1 || true
+          sdkmanager \
+            "platform-tools" \
+            "emulator" \
+            "platforms;android-${{ matrix.api }}" \
+            "$SYSTEM_IMAGE" \
+            > build/device-test-diagnostics/sdkmanager.log 2>&1
+          echo no | avdmanager create avd \
+            --force \
+            --name "$AVD_NAME" \
+            --package "$SYSTEM_IMAGE" \
+            --device "pixel_2" \
+            > build/device-test-diagnostics/avdmanager.log 2>&1
+          avdmanager list avd >> build/device-test-diagnostics/avdmanager.log 2>&1
+          find "$ANDROID_AVD_HOME" -maxdepth 2 \( -type f -o -type d \) \
+            >> build/device-test-diagnostics/avdmanager.log 2>&1
+
+      - name: Start emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb start-server
+          nohup "$ANDROID_HOME/emulator/emulator" \
+            -avd "$AVD_NAME" \
+            -no-window \
+            -gpu swiftshader_indirect \
+            -noaudio \
+            -no-boot-anim \
+            -camera-back none \
+            -camera-front none \
+            -no-snapshot \
+            -wipe-data \
+            > build/device-test-diagnostics/emulator.log 2>&1 &
+          emulator_pid=$!
+          echo "$emulator_pid" > build/device-test-diagnostics/emulator.pid
+
+          booted=0
+          for attempt in $(seq 1 180); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo "Emulator process exited before boot completed." >&2
+              tail -n 300 build/device-test-diagnostics/emulator.log >&2 || true
+              exit 1
+            fi
+
+            state="$(adb get-state 2>/dev/null || true)"
+            completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+            if [ "$state" = "device" ] && [ "$completed" = "1" ]; then
+              booted=1
+              break
+            fi
+            sleep 2
+          done
+
+          adb devices -l | tee build/device-test-diagnostics/adb-devices.txt
+          adb shell getprop > build/device-test-diagnostics/device-properties.txt || true
+          if [ "$booted" -ne 1 ]; then
+            echo "Emulator did not complete boot within 360 seconds." >&2
+            tail -n 300 build/device-test-diagnostics/emulator.log >&2 || true
+            exit 1
+          fi
+
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell input keyevent 82 || true
+
+      - name: Run personalization instrumentation tests
+        shell: bash
+        run: |
+          chmod +x gradlew
+          set +e
+          ./gradlew connectedUnstableDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.package=org.futo.inputmethod.latin.personalization \
+            --stacktrace \
+            --no-daemon \
+            > build/device-test-diagnostics/gradle.log 2>&1
+          status=$?
+          adb logcat -d > build/device-test-diagnostics/logcat.txt 2>&1 || true
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo "Instrumentation tests failed. Relevant diagnostics:"
+            grep -nE '(^e: | error: |FAILED|FAILURE:|What went wrong:|Execution failed|Tests on .* failed|INSTRUMENTATION_)' \
+              build/device-test-diagnostics/gradle.log | tail -n 250 || true
+            echo "Last 300 Gradle log lines:"
+            tail -n 300 build/device-test-diagnostics/gradle.log
+          else
+            echo "Personalization instrumentation tests completed successfully on API ${{ matrix.api }}."
+            tail -n 100 build/device-test-diagnostics/gradle.log
+          fi
+          exit "$status"
+
+      - name: Reconstruct load measurement reports
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import pathlib
+          import re
+
+          diagnostics = pathlib.Path("build/device-test-diagnostics")
+          log_path = diagnostics / "logcat.txt"
+          expected = [
+              "personalization-load-report.json",
+              "personalization-shadow-queue-report.json",
+          ]
+          pattern = re.compile(
+              r"PERSONALIZATION_REPORT\|([^|\s]+)\|(\d+)\|(\d+)\|([A-Za-z0-9+/=]*)"
+          )
+          chunks = {}
+          totals = {}
+          if log_path.exists():
+              for match in pattern.finditer(log_path.read_text(errors="replace")):
+                  name, index, total, payload = match.groups()
+                  chunks.setdefault(name, {})[int(index)] = payload
+                  totals.setdefault(name, set()).add(int(total))
+
+          missing = []
+          for name in expected:
+              total_values = totals.get(name, set())
+              parts = chunks.get(name, {})
+              if len(total_values) != 1:
+                  missing.append(f"{name}: missing or conflicting chunk count")
+                  continue
+              total = next(iter(total_values))
+              if set(parts) != set(range(1, total + 1)):
+                  missing.append(
+                      f"{name}: expected chunks 1..{total}, found {sorted(parts)}"
+                  )
+                  continue
+              try:
+                  decoded = base64.b64decode(
+                      "".join(parts[index] for index in range(1, total + 1)),
+                      validate=True,
+                  )
+                  parsed = json.loads(decoded.decode("utf-8"))
+              except Exception as exception:
+                  missing.append(f"{name}: decode failed: {exception}")
+                  continue
+              if parsed.get("formatVersion") != "0.1":
+                  missing.append(f"{name}: unexpected formatVersion")
+                  continue
+              (diagnostics / name).write_bytes(decoded)
+
+          if missing:
+              message = "\n".join(missing) + "\n"
+              (diagnostics / "load-report-unavailable.txt").write_text(message)
+              raise SystemExit(message)
+          PY
+
+      - name: Stop emulator
+        if: always()
+        run: |
+          adb emu kill || true
+          if [ -f build/device-test-diagnostics/emulator.pid ]; then
+            kill "$(cat build/device-test-diagnostics/emulator.pid)" || true
+          fi
+
+      - name: Upload instrumentation diagnostics and reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: personalization-instrumentation-reports-api${{ matrix.api }}
+          path: |
+            build/device-test-diagnostics/**
+            build/reports/androidTests/connected/**
+            build/outputs/androidTest-results/connected/**
+          if-no-files-found: error
+          retention-days: 14

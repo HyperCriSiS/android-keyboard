@@ -24,9 +24,11 @@ import static org.futo.inputmethod.latin.define.DecoderSpecificConstants.SHOULD_
 
 import org.futo.inputmethod.keyboard.Keyboard;
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
+import org.futo.inputmethod.latin.common.ComposedData;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.StringUtils;
 import org.futo.inputmethod.latin.define.DebugFlags;
+import org.futo.inputmethod.latin.personalization.PersonalizationShadowMode;
 import org.futo.inputmethod.latin.settings.SettingsValuesForSuggestion;
 import org.futo.inputmethod.latin.utils.AutoCorrectionUtils;
 import org.futo.inputmethod.latin.utils.BinaryDictionaryUtils;
@@ -328,10 +330,15 @@ public final class Suggest {
             final SettingsValuesForSuggestion settingsValuesForSuggestion,
             final int inputStyleIfNotPrediction, final boolean isCorrectionEnabled,
             final int sequenceNumber, final OnGetSuggestedWordsCallback callback) {
+        final ComposedData composedData = wordComposer.getComposedDataSnapshot();
         final SuggestionResults suggestionResults = mDictionaryFacilitator.getSuggestionResults(
-                wordComposer.getComposedDataSnapshot(), ngramContext, keyboard,
-                settingsValuesForSuggestion, SESSION_ID_TYPING, inputStyleIfNotPrediction);
+                composedData, ngramContext, keyboard, settingsValuesForSuggestion,
+                SESSION_ID_TYPING, inputStyleIfNotPrediction);
         final Locale locale = mDictionaryFacilitator.getPrimaryLocale();
+        if (BuildConfig.DEBUG && PersonalizationShadowMode.isEnabled()) {
+            PersonalizationShadowMode.observe(locale, composedData, suggestionResults,
+                    inputStyleIfNotPrediction, SESSION_ID_TYPING);
+        }
 
         callback.onGetSuggestedWords(
             obtainNonBatchedInputSuggestedWords(wordComposer, inputStyleIfNotPrediction,
