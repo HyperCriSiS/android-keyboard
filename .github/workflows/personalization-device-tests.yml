@@ -47,6 +47,8 @@ jobs:
       VERSION_CODE: "1"
       VERSION_NAME: "0.0.0-ci"
       BRANCH_NAME: "dev"
+      AVD_NAME: personalization-api35
+      SYSTEM_IMAGE: system-images;android-35;default;x86_64
 
     steps:
       - name: Check out repository
@@ -59,6 +61,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -76,43 +81,103 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm | tee build/device-test-diagnostics/kvm.txt
+
+      - name: Install API 35 emulator image
+        shell: bash
+        run: |
+          set -o pipefail
+          yes | sdkmanager --licenses > build/device-test-diagnostics/licenses.log 2>&1 || true
+          sdkmanager \
+            "platform-tools" \
+            "emulator" \
+            "platforms;android-35" \
+            "$SYSTEM_IMAGE" \
+            > build/device-test-diagnostics/sdkmanager.log 2>&1
+          echo no | avdmanager create avd \
+            --force \
+            --name "$AVD_NAME" \
+            --package "$SYSTEM_IMAGE" \
+            --device "pixel_2" \
+            > build/device-test-diagnostics/avdmanager.log 2>&1
+          avdmanager list avd >> build/device-test-diagnostics/avdmanager.log 2>&1
+
+      - name: Start emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb start-server
+          nohup "$ANDROID_HOME/emulator/emulator" \
+            -avd "$AVD_NAME" \
+            -no-window \
+            -gpu swiftshader_indirect \
+            -noaudio \
+            -no-boot-anim \
+            -camera-back none \
+            -camera-front none \
+            -no-snapshot \
+            -wipe-data \
+            > build/device-test-diagnostics/emulator.log 2>&1 &
+          echo $! > build/device-test-diagnostics/emulator.pid
+
+          adb wait-for-device
+          booted=0
+          for attempt in $(seq 1 180); do
+            state="$(adb get-state 2>/dev/null || true)"
+            completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+            if [ "$state" = "device" ] && [ "$completed" = "1" ]; then
+              booted=1
+              break
+            fi
+            sleep 2
+          done
+
+          adb devices -l | tee build/device-test-diagnostics/adb-devices.txt
+          adb shell getprop > build/device-test-diagnostics/device-properties.txt || true
+          if [ "$booted" -ne 1 ]; then
+            echo "Emulator did not complete boot within 360 seconds." >&2
+            tail -n 300 build/device-test-diagnostics/emulator.log >&2 || true
+            exit 1
+          fi
+
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell input keyevent 82 || true
 
       - name: Run personalization instrumentation tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: default
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          disk-size: 6000M
-          heap-size: 1024M
-          emulator-options: >-
-            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-            -camera-back none -camera-front none -no-snapshot-save
-          script: |
-            chmod +x gradlew
-            set +e
-            ./gradlew connectedUnstableDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.package=org.futo.inputmethod.latin.personalization \
-              --stacktrace \
-              --no-daemon \
-              > build/device-test-diagnostics/gradle.log 2>&1
-            status=$?
-            adb logcat -d > build/device-test-diagnostics/logcat.txt 2>&1 || true
-            set -e
+        shell: bash
+        run: |
+          chmod +x gradlew
+          set +e
+          ./gradlew connectedUnstableDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.package=org.futo.inputmethod.latin.personalization \
+            --stacktrace \
+            --no-daemon \
+            > build/device-test-diagnostics/gradle.log 2>&1
+          status=$?
+          adb logcat -d > build/device-test-diagnostics/logcat.txt 2>&1 || true
+          set -e
 
-            if [ "$status" -ne 0 ]; then
-              echo "Instrumentation tests failed. Relevant diagnostics:"
-              grep -nE '(^e: | error: |FAILED|FAILURE:|What went wrong:|Execution failed|Tests on .* failed|INSTRUMENTATION_)' \
-                build/device-test-diagnostics/gradle.log | tail -n 250 || true
-              echo "Last 300 Gradle log lines:"
-              tail -n 300 build/device-test-diagnostics/gradle.log
-            else
-              echo "Personalization instrumentation tests completed successfully."
-              tail -n 100 build/device-test-diagnostics/gradle.log
-            fi
-            exit "$status"
+          if [ "$status" -ne 0 ]; then
+            echo "Instrumentation tests failed. Relevant diagnostics:"
+            grep -nE '(^e: | error: |FAILED|FAILURE:|What went wrong:|Execution failed|Tests on .* failed|INSTRUMENTATION_)' \
+              build/device-test-diagnostics/gradle.log | tail -n 250 || true
+            echo "Last 300 Gradle log lines:"
+            tail -n 300 build/device-test-diagnostics/gradle.log
+          else
+            echo "Personalization instrumentation tests completed successfully."
+            tail -n 100 build/device-test-diagnostics/gradle.log
+          fi
+          exit "$status"
+
+      - name: Stop emulator
+        if: always()
+        run: |
+          adb emu kill || true
+          if [ -f build/device-test-diagnostics/emulator.pid ]; then
+            kill "$(cat build/device-test-diagnostics/emulator.pid)" || true
+          fi
 
       - name: Upload instrumentation diagnostics and reports
         if: always()
