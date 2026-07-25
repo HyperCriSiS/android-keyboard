@@ -6,7 +6,6 @@ import android.os.SystemClock
 import androidx.test.InstrumentationRegistry
 import androidx.test.filters.LargeTest
 import androidx.test.runner.AndroidJUnit4
-import java.io.File
 import java.security.MessageDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -16,9 +15,10 @@ import org.junit.runner.RunWith
 /**
  * Produces repeatable diagnostic measurements without enforcing device-specific latency limits.
  *
- * The JSON report is written into the debug target application's cache directory and pulled by the
- * GitHub Actions device workflow. Correctness and the 64 MiB source-store payload boundary remain
- * hard assertions; timing and heap values are evidence for later reviewed acceptance thresholds.
+ * The JSON report is published into /data/local/tmp while the debug target is still installed and
+ * pulled by the GitHub Actions device workflow. Correctness and the 64 MiB source-store payload
+ * boundary remain hard assertions; timing and heap values are evidence for later reviewed
+ * acceptance thresholds.
  */
 @LargeTest
 @RunWith(AndroidJUnit4::class)
@@ -28,7 +28,7 @@ class PersonalizationLoadMeasurementTest {
         val context: Context = InstrumentationRegistry.getTargetContext()
         val measurements = TEST_SIZES.map { size -> measure(context, size) }
         val report = buildReport(measurements)
-        File(context.cacheDir, REPORT_FILE_NAME).writeText(report)
+        PersonalizationMeasurementReportPublisher.publish(context, REPORT_FILE_NAME, report)
 
         assertEquals(TEST_SIZES.toList(), measurements.map { it.wordCount })
         assertTrue(measurements.all { it.rejectedWordCount == 0 })
