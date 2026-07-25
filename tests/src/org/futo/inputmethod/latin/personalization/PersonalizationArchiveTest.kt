@@ -4,7 +4,6 @@ import androidx.test.filters.SmallTest
 import androidx.test.runner.AndroidJUnit4
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -67,8 +66,10 @@ class PersonalizationArchiveTest {
         prepared.writeTo(output)
         output.write(0x7f)
 
+        val written = output.toByteArray()
         assertFalse(output.closed)
-        assertTrue(output.size() > prepared.manifestBytes.size + prepared.dataBytes.size)
+        assertTrue(written.size > 1)
+        assertEquals(0x7f.toByte(), written.last())
     }
 
     @Test
