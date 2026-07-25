@@ -78,6 +78,36 @@ Each event may contain:
 
 The background work item temporarily contains the current typed word and at most sixteen candidate words until evaluation completes. It is never written to disk or retained in the event ring buffer.
 
+## Aggregate report format `0.1`
+
+The Developer screen can build a versioned aggregate report from the current in-memory observation window. Building the report does not write a file and does not enable shadow mode automatically.
+
+The aggregate report contains:
+
+- observation-window timestamps;
+- current runtime generation and data hash;
+- event counts grouped by runtime generation;
+- evaluated, dropped, skipped, and retained-event counters;
+- queue-drop rate;
+- candidate-count averages;
+- manual-prefix visibility totals and rate;
+- learned-history visibility totals and rate;
+- finding counts and event rates;
+- locale, input-style, and top dictionary-source counts;
+- average, maximum, and fixed-bucket evaluation latency.
+
+Unlike the recent-event display, the aggregate report deliberately contains no:
+
+- typed-word fingerprints;
+- candidate fingerprints;
+- code-point lengths;
+- event-level timestamps;
+- sentence context;
+- application scopes;
+- persistent user identifiers.
+
+The JSON codec validates these privacy declarations and refuses a format-`0.1` report that claims to contain any of those identifying fields. The current UI exposes only an in-memory summary. User-selected report export is not implemented yet.
+
 ## Performance boundary
 
 The typing thread performs only:
@@ -93,7 +123,7 @@ The worker uses:
 - a ring buffer of 256 completed events;
 - drop accounting instead of blocking when the queue is full.
 
-Store reads, JSON decoding, runtime compilation, normalization, rule matching, hashing, and statistics run outside the typing thread.
+Store reads, JSON decoding, runtime compilation, normalization, rule matching, hashing, event aggregation, and statistics run outside the typing thread.
 
 ## Findings
 
@@ -123,27 +153,32 @@ The experimental runtime contains learned evidence for the exact typed word, but
 
 A finding is diagnostic evidence, not automatically proof of a production bug. Prefix length, candidate truncation, later filtering, casing transformations, and legacy probability semantics must be considered during review.
 
+## Current test coverage
+
+The personalization instrumentation suite is executed on an Android API 35 x86_64 emulator in GitHub Actions. The current suite executes 72 tests covering archive safety, migration, validation, merge and edit planning, transactional storage, recovery, rollback, runtime indexing, source activation, shadow evaluation, and aggregate-report privacy.
+
+Additional Android API levels and sustained real-device typing tests are still required before production activation.
+
 ## Current limitations
 
 - Only manual Android personal words have a validated migration into the experimental store.
 - Legacy automatic-history evidence is inspectable but is not yet converted into portable counts or confidence.
 - Shadow mode compares candidate presence and explicit rules; it does not yet reproduce the legacy binary dictionary score.
-- Events are in-memory diagnostics, not a stable export format.
-- Instrumentation tests are compiled by CI but still require execution on a device or emulator.
+- Recent events and aggregate reports are in-memory diagnostics, not user-exportable artifacts.
 - Process-local enablement is intentional; there is no release setting or persistent opt-in.
 
 ## Acceptance gates before production use
 
 The new personalization runtime must not affect normal typing until all of the following are available:
 
-1. instrumentation tests executed on supported Android API levels;
+1. instrumentation tests executed on all selected supported Android API levels;
 2. sustained typing tests showing no user-visible latency regression;
 3. measured queue-drop rate under rapid typing;
 4. reviewed samples for every finding category;
 5. validated mapping for legacy user-history evidence;
 6. parity thresholds for migrated manual words and learned entries;
 7. rollback tests after simulated corrupt generations and activation failures;
-8. a versioned, privacy-reviewed diagnostic report format;
+8. privacy review and explicit approval of the versioned aggregate report format;
 9. an explicit feature flag that can restore the legacy path immediately.
 
 The first production integration should remain dual-path: the legacy dictionaries stay authoritative while the new runtime only suppresses or prefers candidates after the relevant rule behavior has passed these gates.
