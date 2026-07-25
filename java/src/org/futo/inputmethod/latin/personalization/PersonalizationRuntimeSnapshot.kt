@@ -16,7 +16,7 @@ data class PersonalizationRuntimeCorrectionKey(
 )
 
 /**
- * Immutable, pre-indexed view of one committed personalization generation.
+ * Deeply immutable, pre-indexed view of one committed personalization generation.
  *
  * The runtime may retain this object while a newer editable generation is being written. Switching
  * generations is therefore a single reference replacement rather than a partially visible update.
@@ -44,19 +44,24 @@ class PersonalizationRuntimeSnapshot internal constructor(
         require(limit > 0) { "limit must be positive." }
         val localeKey = canonicalLocale(locale)
         val normalizedPrefix = normalizeText(prefix)
-        return buildList {
-            manualWordsByLocale[localeKey]?.let(::addAll)
-            if (localeKey != null) manualWordsByLocale[null]?.let(::addAll)
-        }
-            .asSequence()
-            .filter { normalizedPrefix.isEmpty() || normalizeText(it.word).startsWith(normalizedPrefix) }
-            .distinctBy { it.id.lowercase(Locale.ROOT) }
-            .sortedWith(
-                compareByDescending<ManualWordRecord> { it.frequency }
-                    .thenBy { normalizeText(it.word) },
-            )
-            .take(limit)
-            .toList()
+        return immutableList(
+            buildList {
+                manualWordsByLocale[localeKey]?.let(::addAll)
+                if (localeKey != null) manualWordsByLocale[null]?.let(::addAll)
+            }
+                .asSequence()
+                .filter {
+                    normalizedPrefix.isEmpty() ||
+                        normalizeText(it.word).startsWith(normalizedPrefix)
+                }
+                .distinctBy { it.id.lowercase(Locale.ROOT) }
+                .sortedWith(
+                    compareByDescending<ManualWordRecord> { it.frequency }
+                        .thenBy { normalizeText(it.word) },
+                )
+                .take(limit)
+                .toList(),
+        )
     }
 
     fun learnedWord(locale: String, word: String): LearnedWordRecord? {
@@ -114,36 +119,48 @@ object PersonalizationRuntimeSnapshotCompiler {
             "Store snapshot has an invalid data hash."
         }
 
-        val manualWords = snapshot.data.manualWords.toList()
-        val learnedWords = snapshot.data.learnedWords.toList()
-        val learnedNgrams = snapshot.data.learnedNgrams.map { it.copy(terms = it.terms.toList()) }
-        val wordRules = snapshot.data.wordRules.toList()
-        val correctionRules = snapshot.data.correctionRules.toList()
-        val tombstones = snapshot.data.tombstones.toList()
+        val manualWords = immutableList(snapshot.data.manualWords)
+        val learnedWords = immutableList(snapshot.data.learnedWords)
+        val learnedNgrams = immutableList(
+            snapshot.data.learnedNgrams.map { record ->
+                record.copy(terms = immutableList(record.terms))
+            },
+        )
+        val wordRules = immutableList(snapshot.data.wordRules)
+        val correctionRules = immutableList(snapshot.data.correctionRules)
+        val tombstones = immutableList(snapshot.data.tombstones)
 
-        val manualWordsByLocale = manualWords
-            .groupBy { canonicalLocale(it.locale) }
-            .mapValues { (_, records) -> records.toList() }
-        val learnedWordsByKey = learnedWords.associateBy { record ->
-            PersonalizationRuntimeWordKey(
-                locale = canonicalLocale(record.locale),
-                normalizedWord = normalizeText(record.word),
-            )
-        }
-        val wordRulesByKey = wordRules.associateBy { record ->
-            PersonalizationRuntimeWordKey(
-                locale = canonicalLocale(record.locale),
-                normalizedWord = normalizeText(record.word),
-            )
-        }
-        val correctionRulesByKey = correctionRules.associateBy { record ->
-            PersonalizationRuntimeCorrectionKey(
-                locale = canonicalLocale(record.locale),
-                normalizedTyped = normalizeText(record.typed),
-                normalizedReplacement = normalizeText(record.replacement),
-                appScope = canonicalAppScope(record.appScope),
-            )
-        }
+        val manualWordsByLocale = immutableMap(
+            manualWords
+                .groupBy { canonicalLocale(it.locale) }
+                .mapValues { (_, records) -> immutableList(records) },
+        )
+        val learnedWordsByKey = immutableMap(
+            learnedWords.associateBy { record ->
+                PersonalizationRuntimeWordKey(
+                    locale = canonicalLocale(record.locale),
+                    normalizedWord = normalizeText(record.word),
+                )
+            },
+        )
+        val wordRulesByKey = immutableMap(
+            wordRules.associateBy { record ->
+                PersonalizationRuntimeWordKey(
+                    locale = canonicalLocale(record.locale),
+                    normalizedWord = normalizeText(record.word),
+                )
+            },
+        )
+        val correctionRulesByKey = immutableMap(
+            correctionRules.associateBy { record ->
+                PersonalizationRuntimeCorrectionKey(
+                    locale = canonicalLocale(record.locale),
+                    normalizedTyped = normalizeText(record.typed),
+                    normalizedReplacement = normalizeText(record.replacement),
+                    appScope = canonicalAppScope(record.appScope),
+                )
+            },
+        )
 
         return PersonalizationRuntimeSnapshot(
             generationId = snapshot.generation.generationId,
