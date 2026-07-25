@@ -37,6 +37,7 @@ import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEditor
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutList
 import org.futo.inputmethod.latin.uix.settings.pages.DevPersonalizationExportPreviewScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevPersonalizationInventoryScreen
+import org.futo.inputmethod.latin.uix.settings.pages.DevPersonalizationShadowModeScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevPersonalizationStoreScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevThemeImportScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DeveloperScreen
@@ -187,6 +188,9 @@ fun SettingsNavigator(
             composable("devpersonalizationstore") {
                 DevPersonalizationStoreScreen(navController)
             }
+            composable("devpersonalizationshadow") {
+                DevPersonalizationShadowModeScreen(navController)
+            }
             composable("devkeyboard") { DevKeyboardScreen(navController) }
             composable("blacklist") { BlacklistScreen(navController) }
             composable("payment") { PaymentScreen(navController) { navController.navigateUp() } }
@@ -195,7 +199,7 @@ fun SettingsNavigator(
             composable("exportingcfg") { ExportingMenu(navController) }
             composable("kasroz") { KASROZMenu() }
             dialog("update") { UpdateDialog(navController = navController) }
-            dialog("alreadyPaid") { AlreadyPaidDialog(navController = navController) }
+            dialog("alreadyPaid") { AlreadyPaidDialog(navController) }
             dialog("customThemeDialog") { CustomThemeDialog(navController = navController) }
             addModelManagerNavigation(navController)
         }
