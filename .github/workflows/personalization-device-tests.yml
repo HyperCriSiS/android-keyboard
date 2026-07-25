@@ -118,11 +118,17 @@ jobs:
             -no-snapshot \
             -wipe-data \
             > build/device-test-diagnostics/emulator.log 2>&1 &
-          echo $! > build/device-test-diagnostics/emulator.pid
+          emulator_pid=$!
+          echo "$emulator_pid" > build/device-test-diagnostics/emulator.pid
 
-          adb wait-for-device
           booted=0
           for attempt in $(seq 1 180); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo "Emulator process exited before boot completed." >&2
+              tail -n 300 build/device-test-diagnostics/emulator.log >&2 || true
+              exit 1
+            fi
+
             state="$(adb get-state 2>/dev/null || true)"
             completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
             if [ "$state" = "device" ] && [ "$completed" = "1" ]; then
