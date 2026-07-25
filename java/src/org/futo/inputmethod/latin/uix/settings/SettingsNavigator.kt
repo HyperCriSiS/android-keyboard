@@ -35,6 +35,7 @@ import org.futo.inputmethod.latin.uix.settings.pages.DevLanguagePackageRegistryS
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEdit
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEditor
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutList
+import org.futo.inputmethod.latin.uix.settings.pages.DevPersonalizationExportPreviewScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevPersonalizationInventoryScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevThemeImportScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DeveloperScreen
@@ -178,6 +179,9 @@ fun SettingsNavigator(
             composable("devlanguagepackageregistry") { DevLanguagePackageRegistryScreen(navController) }
             composable("devpersonalizationinventory") {
                 DevPersonalizationInventoryScreen(navController)
+            }
+            composable("devpersonalizationexportpreview") {
+                DevPersonalizationExportPreviewScreen(navController)
             }
             composable("devkeyboard") { DevKeyboardScreen(navController) }
             composable("blacklist") { BlacklistScreen(navController) }
