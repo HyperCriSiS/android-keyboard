@@ -9,6 +9,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,7 +38,6 @@ class TransactionalPersonalizationStoreTest {
     @Test
     fun initializationCreatesReadableImmutableGeneration() {
         val source = PersonalizationTestFixtures.validData()
-
         val initialized = store.initialize(source, committedAt = 10_000)
         assertTrue(initialized is PersonalizationStoreInitializeResult.Initialized)
         val snapshot = (initialized as PersonalizationStoreInitializeResult.Initialized).snapshot
@@ -47,10 +47,15 @@ class TransactionalPersonalizationStoreTest {
         assertEquals(source, snapshot.data)
         assertTrue(File(snapshot.generationDirectory, "data.json").isFile)
         assertTrue(File(snapshot.generationDirectory, "commit.json").isFile)
+        assertUnsupportedMutation { (snapshot.data.manualWords as MutableList).clear() }
+        assertUnsupportedMutation { (snapshot.generation.changes as MutableList).clear() }
 
         val read = store.readCurrent()
         assertTrue(read is PersonalizationStoreReadResult.Ready)
-        assertEquals(snapshot.generation.generationId, (read as PersonalizationStoreReadResult.Ready).snapshot.generation.generationId)
+        assertEquals(
+            snapshot.generation.generationId,
+            (read as PersonalizationStoreReadResult.Ready).snapshot.generation.generationId,
+        )
 
         val secondInitialization = store.initialize(
             TransactionalPersonalizationStore.emptyDataSet(),
@@ -131,10 +136,7 @@ class TransactionalPersonalizationStoreTest {
         assertEquals(PersonalizationStoreCommitReason.Rollback, restored.generation.reason)
         assertEquals(initial.generation.generationId, restored.generation.sourceGenerationId)
         assertEquals(initial.data, restored.data)
-        assertEquals(
-            listOf(3L, 2L, 1L),
-            store.listHistory().map { it.generation },
-        )
+        assertEquals(listOf(3L, 2L, 1L), store.listHistory().map { it.generation })
         assertTrue(initial.generationDirectory.isDirectory)
         assertTrue(changed.snapshot.generationDirectory.isDirectory)
     }
@@ -152,7 +154,6 @@ class TransactionalPersonalizationStoreTest {
             ),
             committedAt = 11_000,
         ) as PersonalizationStoreCommitResult.Committed
-
         File(second.snapshot.generationDirectory, "data.json").writeText("{}", Charsets.UTF_8)
 
         val recovered = store.readCurrent()
@@ -160,7 +161,10 @@ class TransactionalPersonalizationStoreTest {
         val recoveredSnapshot = (recovered as PersonalizationStoreReadResult.Ready).snapshot
         assertEquals(initial.generation.generationId, recoveredSnapshot.generation.generationId)
         assertEquals(1, recoveredSnapshot.recoveryIssues.size)
-        assertEquals(second.snapshot.generation.generationId, recoveredSnapshot.recoveryIssues.single().generationDirectory)
+        assertEquals(
+            second.snapshot.generation.generationId,
+            recoveredSnapshot.recoveryIssues.single().generationDirectory,
+        )
 
         val third = store.commitEdit(
             expectedGenerationId = recoveredSnapshot.generation.generationId,
@@ -173,7 +177,10 @@ class TransactionalPersonalizationStoreTest {
             committedAt = 12_000,
         )
         assertTrue(third is PersonalizationStoreCommitResult.Committed)
-        assertEquals(3L, (third as PersonalizationStoreCommitResult.Committed).snapshot.generation.generation)
+        assertEquals(
+            3L,
+            (third as PersonalizationStoreCommitResult.Committed).snapshot.generation.generation,
+        )
     }
 
     @Test
@@ -205,7 +212,6 @@ class TransactionalPersonalizationStoreTest {
     fun invalidReplacementNeverCreatesGeneration() {
         val initial = initializedSnapshot()
         val invalid = initial.data.copy(formatVersion = "99.0")
-
         val result = store.replaceData(
             expectedGenerationId = initial.generation.generationId,
             data = invalid,
@@ -216,6 +222,27 @@ class TransactionalPersonalizationStoreTest {
 
         assertTrue(result is PersonalizationStoreCommitResult.Invalid)
         assertEquals(1, store.listHistory().size)
+    }
+
+    @Test
+    fun configuredDataLimitRejectsOversizedGenerationBeforeVisibility() {
+        val limited = TransactionalPersonalizationStore(
+            rootDirectory = root,
+            limits = PersonalizationStoreLimits(
+                maxDataBytes = 32,
+                maxCommitMetadataBytes = 8 * 1024,
+                maxJournalChanges = 10,
+            ),
+        )
+
+        val result = limited.initialize(
+            PersonalizationTestFixtures.validData(),
+            committedAt = 10_000,
+        )
+
+        assertTrue(result is PersonalizationStoreInitializeResult.Failed)
+        assertTrue(File(root, "generations").listFiles().orEmpty().isEmpty())
+        assertTrue(File(root, ".staging").listFiles().orEmpty().isEmpty())
     }
 
     private fun initializedSnapshot(): PersonalizationStoreSnapshot {
@@ -250,5 +277,14 @@ class TransactionalPersonalizationStoreTest {
                 result
             },
         )
+    }
+
+    private fun assertUnsupportedMutation(block: () -> Unit) {
+        try {
+            block()
+            fail("Expected immutable collection mutation to fail.")
+        } catch (_: UnsupportedOperationException) {
+            // Expected.
+        }
     }
 }
