@@ -93,30 +93,45 @@ class PersonalizationArchiveTest {
     }
 
     @Test
-    fun unsafeAndCaseCollidingPathsAreRejected() {
+    fun unsafeTraversalPathIsRejectedByInspectorOrAndroidRuntime() {
         val prepared = PersonalizationArchiveBuilder.prepare(
             PersonalizationTestFixtures.validData(),
             options(),
         )
-        val unsafe = zipOf(
+        val archive = zipOf(
             "../manifest.json" to prepared.manifestBytes,
             "data.json" to prepared.dataBytes,
         )
-        val collision = zipOf(
+
+        val inspection = PersonalizationArchiveInspector.inspect(archive)
+        val codes = inspection.issues.map { it.code }.toSet()
+
+        assertFalse(inspection.isValid)
+        assertTrue(
+            "Expected an unsafe-path or platform ZIP rejection, but found $codes",
+            "unsafe_archive_path" in codes || "invalid_zip" in codes,
+        )
+    }
+
+    @Test
+    fun caseCollidingPathsAreRejected() {
+        val prepared = PersonalizationArchiveBuilder.prepare(
+            PersonalizationTestFixtures.validData(),
+            options(),
+        )
+        val archive = zipOf(
             "manifest.json" to prepared.manifestBytes,
             "Manifest.json" to prepared.manifestBytes,
             "data.json" to prepared.dataBytes,
         )
 
+        val inspection = PersonalizationArchiveInspector.inspect(archive)
+        val codes = inspection.issues.map { it.code }.toSet()
+
+        assertFalse(inspection.isValid)
         assertTrue(
-            PersonalizationArchiveInspector.inspect(unsafe).issues.any {
-                it.code == "unsafe_archive_path"
-            },
-        )
-        assertTrue(
-            PersonalizationArchiveInspector.inspect(collision).issues.any {
-                it.code == "duplicate_archive_path"
-            },
+            "Expected a case-insensitive path collision, but found $codes",
+            "duplicate_archive_path" in codes,
         )
     }
 
