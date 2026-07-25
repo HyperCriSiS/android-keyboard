@@ -47,8 +47,8 @@ class TransactionalPersonalizationStoreTest {
         assertEquals(source, snapshot.data)
         assertTrue(File(snapshot.generationDirectory, "data.json").isFile)
         assertTrue(File(snapshot.generationDirectory, "commit.json").isFile)
-        assertUnsupportedMutation { (snapshot.data.manualWords as MutableList).clear() }
-        assertUnsupportedMutation { (snapshot.generation.changes as MutableList).clear() }
+        assertUnsupportedMutation { (snapshot.data.manualWords as MutableList<*>).clear() }
+        assertUnsupportedMutation { (snapshot.generation.changes as MutableList<*>).clear() }
 
         val read = store.readCurrent()
         assertTrue(read is PersonalizationStoreReadResult.Ready)
