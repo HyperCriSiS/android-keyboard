@@ -335,7 +335,7 @@ public final class Suggest {
                 composedData, ngramContext, keyboard, settingsValuesForSuggestion,
                 SESSION_ID_TYPING, inputStyleIfNotPrediction);
         final Locale locale = mDictionaryFacilitator.getPrimaryLocale();
-        if (PersonalizationShadowMode.isEnabled()) {
+        if (BuildConfig.DEBUG && PersonalizationShadowMode.isEnabled()) {
             PersonalizationShadowMode.observe(locale, composedData, suggestionResults,
                     inputStyleIfNotPrediction, SESSION_ID_TYPING);
         }
