@@ -49,6 +49,7 @@ jobs:
       BRANCH_NAME: "dev"
       AVD_NAME: personalization-api35
       SYSTEM_IMAGE: system-images;android-35;default;x86_64
+      ANDROID_AVD_HOME: ${{ runner.temp }}/android-avd
 
     steps:
       - name: Check out repository
@@ -70,9 +71,9 @@ jobs:
 
       - name: Prepare diagnostic directory
         run: |
-          mkdir -p build/device-test-diagnostics
-          printf 'workflow=%s\ncommit=%s\n' \
-            '${{ github.workflow }}' '${{ github.sha }}' \
+          mkdir -p build/device-test-diagnostics "$ANDROID_AVD_HOME"
+          printf 'workflow=%s\ncommit=%s\navdHome=%s\n' \
+            '${{ github.workflow }}' '${{ github.sha }}' "$ANDROID_AVD_HOME" \
             > build/device-test-diagnostics/workflow.txt
 
       - name: Enable KVM access
@@ -101,6 +102,8 @@ jobs:
             --device "pixel_2" \
             > build/device-test-diagnostics/avdmanager.log 2>&1
           avdmanager list avd >> build/device-test-diagnostics/avdmanager.log 2>&1
+          find "$ANDROID_AVD_HOME" -maxdepth 2 -type f -o -type d \
+            >> build/device-test-diagnostics/avdmanager.log 2>&1
 
       - name: Start emulator
         shell: bash
