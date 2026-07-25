@@ -98,11 +98,16 @@ fun DevPersonalizationExportPreviewScreen(
             )
         }
         item {
-            Button(
-                onClick = { generation++ },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Rebuild preview")
+                Button(onClick = { generation++ }) {
+                    Text("Rebuild preview")
+                }
+                Button(onClick = { navController.navigate("devpersonalizationstore") }) {
+                    Text("Open experimental store")
+                }
             }
         }
 
