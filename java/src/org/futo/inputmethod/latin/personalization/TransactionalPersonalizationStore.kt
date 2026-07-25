@@ -19,6 +19,7 @@ private const val STORE_DATA_FILE_NAME = "data.json"
 private const val STORE_COMMIT_FILE_NAME = "commit.json"
 private const val STORE_LOCK_FILE_NAME = ".lock"
 private val GENERATION_DIRECTORY_REGEX = Regex("^([0-9]{20})-([a-f0-9]{12})$")
+private val SHA256_REGEX = Regex("^[a-f0-9]{64}$")
 
 @Serializable
 enum class PersonalizationStoreCommitReason {
@@ -143,20 +144,25 @@ class TransactionalPersonalizationStore(
             withExclusiveStoreLock {
                 ensureDirectories()
                 cleanupStagingLocked()
-                val current = loadCurrentLocked()
-                if (current != null) {
-                    PersonalizationStoreInitializeResult.AlreadyInitialized(current)
-                } else {
-                    val snapshot = writeGenerationLocked(
-                        generationNumber = 1L,
-                        parentGenerationId = null,
-                        committedAt = committedAt,
-                        reason = reason,
-                        sourceGenerationId = null,
-                        changes = emptyList(),
-                        data = initialData,
+                val directories = generationDirectoriesDescending()
+                val current = loadCurrentLocked(directories)
+                when {
+                    current != null -> PersonalizationStoreInitializeResult.AlreadyInitialized(current)
+                    directories.isNotEmpty() -> PersonalizationStoreInitializeResult.Failed(
+                        "Personalization store contains generations, but none can be validated. Refusing to overwrite recoverable data.",
                     )
-                    PersonalizationStoreInitializeResult.Initialized(snapshot)
+                    else -> {
+                        val snapshot = writeGenerationLocked(
+                            generationNumber = 1L,
+                            parentGenerationId = null,
+                            committedAt = committedAt,
+                            reason = reason,
+                            sourceGenerationId = null,
+                            changes = emptyList(),
+                            data = initialData,
+                        )
+                        PersonalizationStoreInitializeResult.Initialized(snapshot)
+                    }
                 }
             }
         } catch (exception: Exception) {
@@ -233,7 +239,7 @@ class TransactionalPersonalizationStore(
                     )
                 }
                 val snapshot = writeGenerationLocked(
-                    generationNumber = current.generation.generation + 1L,
+                    generationNumber = nextGenerationNumberLocked(),
                     parentGenerationId = current.generation.generationId,
                     committedAt = committedAt,
                     reason = PersonalizationStoreCommitReason.UserEdit,
@@ -264,6 +270,7 @@ class TransactionalPersonalizationStore(
         ) {
             "replaceData only accepts import or migration reasons."
         }
+        require(journalMessage.isNotBlank()) { "journalMessage must not be blank." }
         if (committedAt < 0L) {
             return PersonalizationStoreCommitResult.Failed("Commit time must not be negative.")
         }
@@ -289,7 +296,7 @@ class TransactionalPersonalizationStore(
                 }
 
                 val snapshot = writeGenerationLocked(
-                    generationNumber = current.generation.generation + 1L,
+                    generationNumber = nextGenerationNumberLocked(),
                     parentGenerationId = current.generation.generationId,
                     committedAt = committedAt,
                     reason = reason,
@@ -347,7 +354,7 @@ class TransactionalPersonalizationStore(
                 }
 
                 val snapshot = writeGenerationLocked(
-                    generationNumber = current.generation.generation + 1L,
+                    generationNumber = nextGenerationNumberLocked(),
                     parentGenerationId = current.generation.generationId,
                     committedAt = committedAt,
                     reason = PersonalizationStoreCommitReason.Rollback,
@@ -390,9 +397,11 @@ class TransactionalPersonalizationStore(
         }
     }
 
-    private fun loadCurrentLocked(): PersonalizationStoreSnapshot? {
+    private fun loadCurrentLocked(
+        directories: List<File> = generationDirectoriesDescending(),
+    ): PersonalizationStoreSnapshot? {
         val recoveryIssues = mutableListOf<PersonalizationStoreRecoveryIssue>()
-        generationDirectoriesDescending().forEach { directory ->
+        directories.forEach { directory ->
             val loaded = loadGenerationLocked(directory)
             if (loaded != null) {
                 return loaded.copy(recoveryIssues = recoveryIssues.toList())
@@ -426,7 +435,12 @@ class TransactionalPersonalizationStore(
             val directoryGeneration = nameMatch.groupValues[1].toLongOrNull() ?: return null
             if (metadata.generation != directoryGeneration || metadata.generation < 1L) return null
             if (metadata.committedAt < 0L || metadata.dataSizeBytes < 0L) return null
-            if (!metadata.dataSha256.matches(Regex("^[a-f0-9]{64}$"))) return null
+            if (!SHA256_REGEX.matches(metadata.dataSha256)) return null
+            if (metadata.parentGenerationId != null &&
+                !GENERATION_DIRECTORY_REGEX.matches(metadata.parentGenerationId)
+            ) {
+                return null
+            }
 
             val dataBytes = dataFile.readBytes()
             if (dataBytes.size.toLong() != metadata.dataSizeBytes) return null
@@ -455,9 +469,6 @@ class TransactionalPersonalizationStore(
         data: PersonalizationDataSet,
     ): PersonalizationStoreSnapshot {
         require(generationNumber > 0L) { "Generation number must be positive." }
-        if (generationNumber == Long.MAX_VALUE) {
-            throw IllegalStateException("Personalization generation counter is exhausted.")
-        }
         val validation = PersonalizationDataValidator.validateData(data)
         require(validation.isValid) {
             validation.errors.joinToString(separator = "; ") { "${it.path}: ${it.message}" }
@@ -504,18 +515,33 @@ class TransactionalPersonalizationStore(
         }
     }
 
+    private fun nextGenerationNumberLocked(): Long {
+        val highest = generationDirectoriesDescending()
+            .mapNotNull(::generationNumberFromDirectory)
+            .maxOrNull()
+            ?: 0L
+        if (highest == Long.MAX_VALUE) {
+            throw IllegalStateException("Personalization generation counter is exhausted.")
+        }
+        return highest + 1L
+    }
+
     private fun generationDirectoriesDescending(): List<File> {
         if (!generationsDirectory.isDirectory) return emptyList()
         return generationsDirectory.listFiles()
             .orEmpty()
             .filter { it.isDirectory && GENERATION_DIRECTORY_REGEX.matches(it.name) }
-            .sortedByDescending { directory ->
-                GENERATION_DIRECTORY_REGEX.matchEntire(directory.name)
-                    ?.groupValues
-                    ?.get(1)
-                    ?.toLongOrNull()
-                    ?: Long.MIN_VALUE
-            }
+            .sortedWith(
+                compareByDescending<File> { generationNumberFromDirectory(it) ?: Long.MIN_VALUE }
+                    .thenByDescending { it.name },
+            )
+    }
+
+    private fun generationNumberFromDirectory(directory: File): Long? {
+        return GENERATION_DIRECTORY_REGEX.matchEntire(directory.name)
+            ?.groupValues
+            ?.get(1)
+            ?.toLongOrNull()
     }
 
     private fun ensureDirectories() {
