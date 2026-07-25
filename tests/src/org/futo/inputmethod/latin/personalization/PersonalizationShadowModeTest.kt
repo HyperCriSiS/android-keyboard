@@ -35,7 +35,7 @@ class PersonalizationShadowModeTest {
     }
 
     @Test
-    fun reportsBlockedTopCorrectionAndMissingPreferredCorrection() {
+    fun reportsBlockedAutocorrectAtRankOneAndMissingGlobalPreference() {
         val base = PersonalizationTestFixtures.validData()
         val data = base.copy(
             correctionRules = base.correctionRules + listOf(
@@ -54,7 +54,7 @@ class PersonalizationShadowModeTest {
                     revision = 1,
                     createdAt = 8_000,
                     updatedAt = 8_000,
-                    locale = "de-DE",
+                    locale = null,
                     typed = "im",
                     replacement = "immer",
                     action = CorrectionRuleAction.Prefer,
@@ -73,11 +73,43 @@ class PersonalizationShadowModeTest {
             fingerprinter = ::testFingerprint,
         )
 
-        assertTrue(PersonalizationShadowFinding.BlockedCorrectionVisible in event.findings)
-        assertTrue(PersonalizationShadowFinding.BlockedCorrectionRankedFirst in event.findings)
+        assertTrue(
+            PersonalizationShadowFinding.BlockedAutocorrectCandidateRankedFirst in event.findings,
+        )
+        assertFalse(PersonalizationShadowFinding.BlockedSuggestionVisible in event.findings)
         assertTrue(PersonalizationShadowFinding.PreferredCorrectionMissing in event.findings)
-        assertEquals(1, event.blockedCorrectionCount)
+        assertEquals(1, event.blockedAutocorrectCandidateCount)
+        assertEquals(0, event.blockedSuggestionCount)
         assertEquals(1, event.preferredCorrectionCount)
+    }
+
+    @Test
+    fun reportsSuggestionThatShouldHaveBeenHidden() {
+        val base = PersonalizationTestFixtures.validData()
+        val data = base.copy(
+            correctionRules = base.correctionRules + CorrectionRuleRecord(
+                id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                revision = 1,
+                createdAt = 8_000,
+                updatedAt = 8_000,
+                locale = "de-DE",
+                typed = "seid",
+                replacement = "seit",
+                action = CorrectionRuleAction.BlockSuggestion,
+            ),
+        )
+        val event = PersonalizationShadowEvaluator.evaluate(
+            runtime = runtime(data),
+            observation = observation(
+                typedWord = "seid",
+                candidates = listOf(candidate("seit", 2, Dictionary.TYPE_MAIN)),
+            ),
+            fingerprinter = ::testFingerprint,
+        )
+
+        assertTrue(PersonalizationShadowFinding.BlockedSuggestionVisible in event.findings)
+        assertEquals(1, event.blockedSuggestionCount)
+        assertEquals(0, event.blockedAutocorrectCandidateCount)
     }
 
     @Test
