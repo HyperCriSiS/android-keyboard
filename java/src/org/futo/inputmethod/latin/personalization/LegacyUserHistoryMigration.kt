@@ -74,7 +74,7 @@ object LegacyUserHistoryMigration {
         var rejectedWordCount = 0
         var rejectedNgramCount = 0
 
-        inventory.words.forEach { item ->
+        inventory.words.forEach wordLoop@ { item ->
             if (item.word.isBlank()) {
                 rejectedWordCount++
                 issues.add(
@@ -82,7 +82,7 @@ object LegacyUserHistoryMigration {
                     stableId = item.stableId,
                     message = "Blank legacy words cannot be represented as portable learned records.",
                 )
-                return@forEach
+                return@wordLoop
             }
 
             val wordEvidence = mapEvidence(
@@ -138,7 +138,7 @@ object LegacyUserHistoryMigration {
                 )
             }
 
-            item.ngrams.forEach { ngram ->
+            item.ngrams.forEach ngramLoop@ { ngram ->
                 val terms = ngram.contextTerms + ngram.targetWord
                 if (ngram.targetWord.isBlank() ||
                     ngram.contextTerms.any { it.isBlank() } ||
@@ -150,7 +150,7 @@ object LegacyUserHistoryMigration {
                         stableId = ngram.stableId,
                         message = "Legacy n-grams must contain two to four non-blank terms.",
                     )
-                    return@forEach
+                    return@ngramLoop
                 }
 
                 val ngramEvidence = mapEvidence(
@@ -199,12 +199,13 @@ object LegacyUserHistoryMigration {
         val data = PersonalizationDataSet(
             formatVersion = PERSONALIZATION_FORMAT_VERSION,
             learnedWords = learnedWords.values.sortedWith(
-                compareBy<LearnedWordRecord>(String.CASE_INSENSITIVE_ORDER) { it.word }
+                compareBy(String.CASE_INSENSITIVE_ORDER) { record: LearnedWordRecord -> record.word }
                     .thenBy { it.id },
             ),
             learnedNgrams = learnedNgrams.values.sortedWith(
-                compareBy<LearnedNgramRecord> { it.terms.joinToString("\u001f").lowercase(Locale.ROOT) }
-                    .thenBy { it.id },
+                compareBy<LearnedNgramRecord> {
+                    it.terms.joinToString("\u001f").lowercase(Locale.ROOT)
+                }.thenBy { it.id },
             ),
         )
 
