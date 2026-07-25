@@ -189,30 +189,65 @@ jobs:
           fi
           exit "$status"
 
-      - name: Pull load measurement reports
+      - name: Reconstruct load measurement reports
         if: always()
         shell: bash
         run: |
-          missing=0
-          for report_name in \
-            personalization-load-report.json \
-            personalization-shadow-queue-report.json; do
-            target="build/device-test-diagnostics/$report_name"
-            if adb pull "/data/local/tmp/$report_name" "$target" >/dev/null 2>&1; then
-              adb shell rm -f "/data/local/tmp/$report_name" || true
-              if [ ! -s "$target" ]; then
-                rm -f "$target"
-                missing=1
-              fi
-            else
-              rm -f "$target"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "One or more load measurement reports were not available." \
-              > build/device-test-diagnostics/load-report-unavailable.txt
-          fi
+          python3 - <<'PY'
+          import base64
+          import json
+          import pathlib
+          import re
+
+          diagnostics = pathlib.Path("build/device-test-diagnostics")
+          log_path = diagnostics / "logcat.txt"
+          expected = [
+              "personalization-load-report.json",
+              "personalization-shadow-queue-report.json",
+          ]
+          pattern = re.compile(
+              r"PERSONALIZATION_REPORT\|([^|\s]+)\|(\d+)\|(\d+)\|([A-Za-z0-9+/=]*)"
+          )
+          chunks = {}
+          totals = {}
+          if log_path.exists():
+              for match in pattern.finditer(log_path.read_text(errors="replace")):
+                  name, index, total, payload = match.groups()
+                  chunks.setdefault(name, {})[int(index)] = payload
+                  totals.setdefault(name, set()).add(int(total))
+
+          missing = []
+          for name in expected:
+              total_values = totals.get(name, set())
+              parts = chunks.get(name, {})
+              if len(total_values) != 1:
+                  missing.append(f"{name}: missing or conflicting chunk count")
+                  continue
+              total = next(iter(total_values))
+              if set(parts) != set(range(1, total + 1)):
+                  missing.append(
+                      f"{name}: expected chunks 1..{total}, found {sorted(parts)}"
+                  )
+                  continue
+              try:
+                  decoded = base64.b64decode(
+                      "".join(parts[index] for index in range(1, total + 1)),
+                      validate=True,
+                  )
+                  parsed = json.loads(decoded.decode("utf-8"))
+              except Exception as exception:
+                  missing.append(f"{name}: decode failed: {exception}")
+                  continue
+              if parsed.get("formatVersion") != "0.1":
+                  missing.append(f"{name}: unexpected formatVersion")
+                  continue
+              (diagnostics / name).write_bytes(decoded)
+
+          if missing:
+              (diagnostics / "load-report-unavailable.txt").write_text(
+                  "\n".join(missing) + "\n"
+              )
+          PY
 
       - name: Stop emulator
         if: always()
