@@ -45,10 +45,12 @@ class PersonalizationRuntimeSnapshotTest {
             runtime.learnedWord("de_de", "WAHRSCHEINLICH")?.word,
         )
         assertEquals(WordRuleAction.Pin, runtime.wordRule("de-DE", "futo")?.action)
-        assertUnsupportedMutation { (runtime.manualWords as MutableList).clear() }
-        assertUnsupportedMutation { (runtime.learnedNgrams.single().terms as MutableList).clear() }
+        assertUnsupportedMutation { (runtime.manualWords as MutableList<*>).clear() }
         assertUnsupportedMutation {
-            (runtime.findManualWords("de-DE") as MutableList).clear()
+            (runtime.learnedNgrams.single().terms as MutableList<*>).clear()
+        }
+        assertUnsupportedMutation {
+            (runtime.findManualWords("de-DE") as MutableList<*>).clear()
         }
     }
 
