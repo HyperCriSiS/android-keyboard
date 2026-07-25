@@ -63,6 +63,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Prepare diagnostic directory
+        run: |
+          mkdir -p build/device-test-diagnostics
+          printf 'workflow=%s\ncommit=%s\n' \
+            '${{ github.workflow }}' '${{ github.sha }}' \
+            > build/device-test-diagnostics/workflow.txt
+
       - name: Enable KVM access
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -85,18 +92,36 @@ jobs:
             -camera-back none -camera-front none -no-snapshot-save
           script: |
             chmod +x gradlew
+            set +e
             ./gradlew connectedUnstableDebugAndroidTest \
               -Pandroid.testInstrumentationRunnerArguments.package=org.futo.inputmethod.latin.personalization \
               --stacktrace \
-              --no-daemon
+              --no-daemon \
+              > build/device-test-diagnostics/gradle.log 2>&1
+            status=$?
+            adb logcat -d > build/device-test-diagnostics/logcat.txt 2>&1 || true
+            set -e
 
-      - name: Upload instrumentation reports
+            if [ "$status" -ne 0 ]; then
+              echo "Instrumentation tests failed. Relevant diagnostics:"
+              grep -nE '(^e: | error: |FAILED|FAILURE:|What went wrong:|Execution failed|Tests on .* failed|INSTRUMENTATION_)' \
+                build/device-test-diagnostics/gradle.log | tail -n 250 || true
+              echo "Last 300 Gradle log lines:"
+              tail -n 300 build/device-test-diagnostics/gradle.log
+            else
+              echo "Personalization instrumentation tests completed successfully."
+              tail -n 100 build/device-test-diagnostics/gradle.log
+            fi
+            exit "$status"
+
+      - name: Upload instrumentation diagnostics and reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: personalization-instrumentation-reports
           path: |
+            build/device-test-diagnostics/**
             build/reports/androidTests/connected/**
             build/outputs/androidTest-results/connected/**
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
