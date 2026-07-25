@@ -155,7 +155,7 @@ A finding is diagnostic evidence, not automatically proof of a production bug. P
 
 ## Current test coverage
 
-The personalization instrumentation suite is executed on an Android API 35 x86_64 emulator in GitHub Actions. The current suite executes 72 tests covering archive safety, migration, validation, merge and edit planning, transactional storage, recovery, rollback, runtime indexing, source activation, shadow evaluation, and aggregate-report privacy.
+The personalization instrumentation suite is executed on an Android API 35 x86_64 emulator in GitHub Actions. The current suite executes 75 tests covering archive safety, migration, validation, merge and edit planning, transactional storage, recovery, rollback, runtime indexing, source activation, shadow evaluation, and aggregate-report privacy.
 
 Additional Android API levels and sustained real-device typing tests are still required before production activation.
 
