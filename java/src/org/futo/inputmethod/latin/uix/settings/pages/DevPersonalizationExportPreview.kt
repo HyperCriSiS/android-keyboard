@@ -98,15 +98,20 @@ fun DevPersonalizationExportPreviewScreen(
             )
         }
         item {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(onClick = { generation++ }) {
-                    Text("Rebuild preview")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { generation++ }) {
+                        Text("Rebuild preview")
+                    }
+                    Button(onClick = { navController.navigate("devpersonalizationstore") }) {
+                        Text("Open experimental store")
+                    }
                 }
-                Button(onClick = { navController.navigate("devpersonalizationstore") }) {
-                    Text("Open experimental store")
+                Button(onClick = { navController.navigate("devpersonalizationshadow") }) {
+                    Text("Open shadow mode")
                 }
             }
         }
