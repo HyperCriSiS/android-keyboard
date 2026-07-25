@@ -244,9 +244,9 @@ jobs:
               (diagnostics / name).write_bytes(decoded)
 
           if missing:
-              (diagnostics / "load-report-unavailable.txt").write_text(
-                  "\n".join(missing) + "\n"
-              )
+              message = "\n".join(missing) + "\n"
+              (diagnostics / "load-report-unavailable.txt").write_text(message)
+              raise SystemExit(message)
           PY
 
       - name: Stop emulator
