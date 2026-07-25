@@ -189,19 +189,28 @@ jobs:
           fi
           exit "$status"
 
-      - name: Pull load measurement report
+      - name: Pull load measurement reports
         if: always()
         shell: bash
         run: |
-          report=build/device-test-diagnostics/personalization-load-report.json
-          if adb exec-out run-as org.futo.inputmethod.latin.unstable \
-            cat cache/personalization-load-report.json > "$report" 2>/dev/null; then
-            if [ ! -s "$report" ]; then
-              rm -f "$report"
+          missing=0
+          for report_name in \
+            personalization-load-report.json \
+            personalization-shadow-queue-report.json; do
+            target="build/device-test-diagnostics/$report_name"
+            if adb exec-out run-as org.futo.inputmethod.latin.unstable \
+              cat "cache/$report_name" > "$target" 2>/dev/null; then
+              if [ ! -s "$target" ]; then
+                rm -f "$target"
+                missing=1
+              fi
+            else
+              rm -f "$target"
+              missing=1
             fi
-          else
-            rm -f "$report"
-            echo "Load measurement report was not available." \
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "One or more load measurement reports were not available." \
               > build/device-test-diagnostics/load-report-unavailable.txt
           fi
 
