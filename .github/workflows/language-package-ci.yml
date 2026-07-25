@@ -15,6 +15,7 @@ on:
       - "java/src/org/futo/inputmethod/latin/uix/settings/SettingsNavigator.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageInspector.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageRegistry.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationInventory.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevSettings.kt"
       - "native/jni/**"
       - "tests/src/org/futo/inputmethod/latin/languagepack/**"
@@ -33,6 +34,7 @@ on:
       - "java/src/org/futo/inputmethod/latin/uix/settings/SettingsNavigator.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageInspector.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevLanguagePackageRegistry.kt"
+      - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevPersonalizationInventory.kt"
       - "java/src/org/futo/inputmethod/latin/uix/settings/pages/DevSettings.kt"
       - "native/jni/**"
       - "tests/src/org/futo/inputmethod/latin/languagepack/**"
@@ -79,10 +81,37 @@ jobs:
           test -s build/language-packages/ci-example.futolanguage
 
       - name: Compile application and instrumentation tests
+        id: gradle-build
+        shell: bash
         run: |
           chmod +x gradlew
+          set +e
           ./gradlew \
             assembleUnstableDebug \
             assembleUnstableDebugAndroidTest \
             --stacktrace \
-            --no-daemon
+            --no-daemon \
+            > gradle-build.log 2>&1
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo "Gradle build failed. Relevant diagnostics:"
+            grep -nE '(^e: | error: |CMake Error|FAILED|FAILURE:|What went wrong:|Execution failed)' \
+              gradle-build.log | tail -n 250 || true
+            echo "Last 250 log lines:"
+            tail -n 250 gradle-build.log
+          else
+            echo "Gradle build completed successfully."
+            tail -n 80 gradle-build.log
+          fi
+          exit "$status"
+
+      - name: Upload complete Gradle log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: gradle-build.log
+          if-no-files-found: error
+          retention-days: 14
