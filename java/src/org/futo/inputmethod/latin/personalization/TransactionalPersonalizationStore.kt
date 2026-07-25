@@ -21,22 +21,19 @@ private const val STORE_LOCK_FILE_NAME = ".lock"
 private val GENERATION_DIRECTORY_REGEX = Regex("^([0-9]{20})-([a-f0-9]{12})$")
 private val SHA256_REGEX = Regex("^[a-f0-9]{64}$")
 
+data class PersonalizationStoreLimits(
+    val maxDataBytes: Long = 64L * 1024L * 1024L,
+    val maxCommitMetadataBytes: Long = 8L * 1024L * 1024L,
+    val maxJournalChanges: Int = 100_000,
+)
+
 @Serializable
 enum class PersonalizationStoreCommitReason {
-    @SerialName("initialization")
-    Initialization,
-
-    @SerialName("user-edit")
-    UserEdit,
-
-    @SerialName("import")
-    Import,
-
-    @SerialName("migration")
-    Migration,
-
-    @SerialName("rollback")
-    Rollback,
+    @SerialName("initialization") Initialization,
+    @SerialName("user-edit") UserEdit,
+    @SerialName("import") Import,
+    @SerialName("migration") Migration,
+    @SerialName("rollback") Rollback,
 }
 
 @Serializable
@@ -93,7 +90,6 @@ sealed class PersonalizationStoreCommitResult {
         val expectedGenerationId: String,
         val actualGenerationId: String,
     ) : PersonalizationStoreCommitResult()
-
     data class Invalid(val validation: PersonalizationValidationResult) : PersonalizationStoreCommitResult()
     data class Failed(val message: String, val cause: Throwable? = null) : PersonalizationStoreCommitResult()
 }
@@ -110,6 +106,7 @@ sealed class PersonalizationStoreCommitResult {
  */
 class TransactionalPersonalizationStore(
     private val rootDirectory: File,
+    private val limits: PersonalizationStoreLimits = PersonalizationStoreLimits(),
 ) {
     private val stagingDirectory = File(rootDirectory, ".staging")
     private val generationsDirectory = File(rootDirectory, "generations")
@@ -118,9 +115,13 @@ class TransactionalPersonalizationStore(
     companion object {
         private val processLocks = ConcurrentHashMap<String, Any>()
 
-        fun forContext(context: Context): TransactionalPersonalizationStore {
+        fun forContext(
+            context: Context,
+            limits: PersonalizationStoreLimits = PersonalizationStoreLimits(),
+        ): TransactionalPersonalizationStore {
             return TransactionalPersonalizationStore(
-                File(context.filesDir, "personalization-source"),
+                rootDirectory = File(context.filesDir, "personalization-source"),
+                limits = limits,
             )
         }
 
@@ -137,6 +138,13 @@ class TransactionalPersonalizationStore(
         if (committedAt < 0L) {
             return PersonalizationStoreInitializeResult.Failed("Commit time must not be negative.")
         }
+        if (reason != PersonalizationStoreCommitReason.Initialization &&
+            reason != PersonalizationStoreCommitReason.Migration
+        ) {
+            return PersonalizationStoreInitializeResult.Failed(
+                "Initialization accepts only initialization or migration reasons.",
+            )
+        }
         val validation = PersonalizationDataValidator.validateData(initialData)
         if (!validation.isValid) return PersonalizationStoreInitializeResult.Invalid(validation)
 
@@ -151,8 +159,8 @@ class TransactionalPersonalizationStore(
                     directories.isNotEmpty() -> PersonalizationStoreInitializeResult.Failed(
                         "Personalization store contains generations, but none can be validated. Refusing to overwrite recoverable data.",
                     )
-                    else -> {
-                        val snapshot = writeGenerationLocked(
+                    else -> PersonalizationStoreInitializeResult.Initialized(
+                        writeGenerationLocked(
                             generationNumber = 1L,
                             parentGenerationId = null,
                             committedAt = committedAt,
@@ -160,9 +168,8 @@ class TransactionalPersonalizationStore(
                             sourceGenerationId = null,
                             changes = emptyList(),
                             data = initialData,
-                        )
-                        PersonalizationStoreInitializeResult.Initialized(snapshot)
-                    }
+                        ),
+                    )
                 }
             }
         } catch (exception: Exception) {
@@ -210,11 +217,10 @@ class TransactionalPersonalizationStore(
                     )
                 if (current.generation.generationId != expectedGenerationId) {
                     return@withExclusiveStoreLock PersonalizationStoreCommitResult.Conflict(
-                        expectedGenerationId = expectedGenerationId,
-                        actualGenerationId = current.generation.generationId,
+                        expectedGenerationId,
+                        current.generation.generationId,
                     )
                 }
-
                 if (!edit.changed) {
                     return@withExclusiveStoreLock if (edit.data == current.data) {
                         PersonalizationStoreCommitResult.Unchanged(current)
@@ -238,16 +244,17 @@ class TransactionalPersonalizationStore(
                         message = change.message,
                     )
                 }
-                val snapshot = writeGenerationLocked(
-                    generationNumber = nextGenerationNumberLocked(),
-                    parentGenerationId = current.generation.generationId,
-                    committedAt = committedAt,
-                    reason = PersonalizationStoreCommitReason.UserEdit,
-                    sourceGenerationId = null,
-                    changes = changes,
-                    data = edit.data,
+                PersonalizationStoreCommitResult.Committed(
+                    writeGenerationLocked(
+                        generationNumber = nextGenerationNumberLocked(),
+                        parentGenerationId = current.generation.generationId,
+                        committedAt = committedAt,
+                        reason = PersonalizationStoreCommitReason.UserEdit,
+                        sourceGenerationId = null,
+                        changes = changes,
+                        data = edit.data,
+                    ),
                 )
-                PersonalizationStoreCommitResult.Committed(snapshot)
             }
         } catch (exception: Exception) {
             PersonalizationStoreCommitResult.Failed(
@@ -267,9 +274,7 @@ class TransactionalPersonalizationStore(
     ): PersonalizationStoreCommitResult {
         require(reason == PersonalizationStoreCommitReason.Import ||
             reason == PersonalizationStoreCommitReason.Migration
-        ) {
-            "replaceData only accepts import or migration reasons."
-        }
+        ) { "replaceData only accepts import or migration reasons." }
         require(journalMessage.isNotBlank()) { "journalMessage must not be blank." }
         if (committedAt < 0L) {
             return PersonalizationStoreCommitResult.Failed("Commit time must not be negative.")
@@ -295,23 +300,24 @@ class TransactionalPersonalizationStore(
                     return@withExclusiveStoreLock PersonalizationStoreCommitResult.Unchanged(current)
                 }
 
-                val snapshot = writeGenerationLocked(
-                    generationNumber = nextGenerationNumberLocked(),
-                    parentGenerationId = current.generation.generationId,
-                    committedAt = committedAt,
-                    reason = reason,
-                    sourceGenerationId = sourceGenerationId,
-                    changes = listOf(
-                        PersonalizationStoreJournalChange(
-                            kind = "DataReplaced",
-                            recordKind = "DataSet",
-                            recordId = sourceGenerationId ?: "external",
-                            message = journalMessage,
+                PersonalizationStoreCommitResult.Committed(
+                    writeGenerationLocked(
+                        generationNumber = nextGenerationNumberLocked(),
+                        parentGenerationId = current.generation.generationId,
+                        committedAt = committedAt,
+                        reason = reason,
+                        sourceGenerationId = sourceGenerationId,
+                        changes = listOf(
+                            PersonalizationStoreJournalChange(
+                                kind = "DataReplaced",
+                                recordKind = "DataSet",
+                                recordId = sourceGenerationId ?: "external",
+                                message = journalMessage,
+                            ),
                         ),
+                        data = data,
                     ),
-                    data = data,
                 )
-                PersonalizationStoreCommitResult.Committed(snapshot)
             }
         } catch (exception: Exception) {
             PersonalizationStoreCommitResult.Failed(
@@ -329,7 +335,6 @@ class TransactionalPersonalizationStore(
         if (committedAt < 0L) {
             return PersonalizationStoreCommitResult.Failed("Commit time must not be negative.")
         }
-
         return try {
             withExclusiveStoreLock {
                 ensureDirectories()
@@ -344,7 +349,6 @@ class TransactionalPersonalizationStore(
                         current.generation.generationId,
                     )
                 }
-
                 val target = loadGenerationByIdLocked(targetGenerationId)
                     ?: return@withExclusiveStoreLock PersonalizationStoreCommitResult.Failed(
                         "Rollback target '$targetGenerationId' is missing or invalid.",
@@ -353,23 +357,24 @@ class TransactionalPersonalizationStore(
                     return@withExclusiveStoreLock PersonalizationStoreCommitResult.Unchanged(current)
                 }
 
-                val snapshot = writeGenerationLocked(
-                    generationNumber = nextGenerationNumberLocked(),
-                    parentGenerationId = current.generation.generationId,
-                    committedAt = committedAt,
-                    reason = PersonalizationStoreCommitReason.Rollback,
-                    sourceGenerationId = target.generation.generationId,
-                    changes = listOf(
-                        PersonalizationStoreJournalChange(
-                            kind = "Rollback",
-                            recordKind = "DataSet",
-                            recordId = target.generation.generationId,
-                            message = "Restored personalization data from generation ${target.generation.generationId}.",
+                PersonalizationStoreCommitResult.Committed(
+                    writeGenerationLocked(
+                        generationNumber = nextGenerationNumberLocked(),
+                        parentGenerationId = current.generation.generationId,
+                        committedAt = committedAt,
+                        reason = PersonalizationStoreCommitReason.Rollback,
+                        sourceGenerationId = target.generation.generationId,
+                        changes = listOf(
+                            PersonalizationStoreJournalChange(
+                                kind = "Rollback",
+                                recordKind = "DataSet",
+                                recordId = target.generation.generationId,
+                                message = "Restored personalization data from generation ${target.generation.generationId}.",
+                            ),
                         ),
+                        data = target.data,
                     ),
-                    data = target.data,
                 )
-                PersonalizationStoreCommitResult.Committed(snapshot)
             }
         } catch (exception: Exception) {
             PersonalizationStoreCommitResult.Failed(
@@ -384,17 +389,17 @@ class TransactionalPersonalizationStore(
         return withExclusiveStoreLock {
             ensureDirectories()
             cleanupStagingLocked()
-            generationDirectoriesDescending()
-                .mapNotNull { loadGenerationLocked(it)?.generation }
-                .take(limit)
+            immutableList(
+                generationDirectoriesDescending()
+                    .mapNotNull { loadGenerationLocked(it)?.generation }
+                    .take(limit),
+            )
         }
     }
 
-    fun cleanupStaging(): Int {
-        return withExclusiveStoreLock {
-            ensureDirectories()
-            cleanupStagingLocked()
-        }
+    fun cleanupStaging(): Int = withExclusiveStoreLock {
+        ensureDirectories()
+        cleanupStagingLocked()
     }
 
     private fun loadCurrentLocked(
@@ -404,11 +409,11 @@ class TransactionalPersonalizationStore(
         directories.forEach { directory ->
             val loaded = loadGenerationLocked(directory)
             if (loaded != null) {
-                return loaded.copy(recoveryIssues = recoveryIssues.toList())
+                return loaded.copy(recoveryIssues = immutableList(recoveryIssues))
             }
             recoveryIssues += PersonalizationStoreRecoveryIssue(
                 generationDirectory = directory.name,
-                message = "Generation is incomplete, corrupt, or semantically invalid and was skipped.",
+                message = "Generation is incomplete, corrupt, too large, or semantically invalid and was skipped.",
             )
         }
         return null
@@ -424,35 +429,41 @@ class TransactionalPersonalizationStore(
         val dataFile = File(directory, STORE_DATA_FILE_NAME)
         val commitFile = File(directory, STORE_COMMIT_FILE_NAME)
         if (!dataFile.isFile || !commitFile.isFile) return null
+        if (dataFile.length() > limits.maxDataBytes ||
+            commitFile.length() > limits.maxCommitMetadataBytes
+        ) return null
 
         return try {
             val metadata = STORE_JSON.decodeFromString<PersonalizationStoreGeneration>(
                 commitFile.readText(Charsets.UTF_8),
             )
-            if (metadata.storeVersion != PERSONALIZATION_STORE_VERSION) return null
-            if (metadata.generationId != directory.name) return null
             val nameMatch = GENERATION_DIRECTORY_REGEX.matchEntire(directory.name) ?: return null
             val directoryGeneration = nameMatch.groupValues[1].toLongOrNull() ?: return null
+            if (metadata.storeVersion != PERSONALIZATION_STORE_VERSION) return null
+            if (metadata.generationId != directory.name) return null
             if (metadata.generation != directoryGeneration || metadata.generation < 1L) return null
             if (metadata.committedAt < 0L || metadata.dataSizeBytes < 0L) return null
+            if (metadata.dataSizeBytes > limits.maxDataBytes) return null
+            if (metadata.changes.size > limits.maxJournalChanges) return null
             if (!SHA256_REGEX.matches(metadata.dataSha256)) return null
             if (metadata.parentGenerationId != null &&
                 !GENERATION_DIRECTORY_REGEX.matches(metadata.parentGenerationId)
-            ) {
-                return null
-            }
+            ) return null
 
             val dataBytes = dataFile.readBytes()
             if (dataBytes.size.toLong() != metadata.dataSizeBytes) return null
             if (sha256(dataBytes) != metadata.dataSha256) return null
             if (!directory.name.endsWith(metadata.dataSha256.take(12))) return null
 
-            val data = PersonalizationDataCodec.decodeData(dataBytes.toString(Charsets.UTF_8))
+            val data = PersonalizationDataCodec.decodeData(
+                dataBytes.toString(Charsets.UTF_8),
+            ).deepImmutableCopy()
             if (!PersonalizationDataValidator.validateData(data).isValid) return null
             PersonalizationStoreSnapshot(
-                generation = metadata,
+                generation = metadata.deepImmutableCopy(),
                 data = data,
                 generationDirectory = directory,
+                recoveryIssues = emptyList(),
             )
         } catch (_: Exception) {
             null
@@ -469,12 +480,18 @@ class TransactionalPersonalizationStore(
         data: PersonalizationDataSet,
     ): PersonalizationStoreSnapshot {
         require(generationNumber > 0L) { "Generation number must be positive." }
+        require(changes.size <= limits.maxJournalChanges) {
+            "Journal contains more than ${limits.maxJournalChanges} changes."
+        }
         val validation = PersonalizationDataValidator.validateData(data)
         require(validation.isValid) {
             validation.errors.joinToString(separator = "; ") { "${it.path}: ${it.message}" }
         }
 
         val dataBytes = PersonalizationDataCodec.encodeData(data).toByteArray(Charsets.UTF_8)
+        require(dataBytes.size.toLong() <= limits.maxDataBytes) {
+            "Personalization data exceeds ${limits.maxDataBytes} bytes."
+        }
         val dataHash = sha256(dataBytes)
         val generationId = "%020d-%s".format(Locale.ROOT, generationNumber, dataHash.take(12))
         val metadata = PersonalizationStoreGeneration(
@@ -490,6 +507,9 @@ class TransactionalPersonalizationStore(
             changes = changes,
         )
         val metadataBytes = STORE_JSON.encodeToString(metadata).toByteArray(Charsets.UTF_8)
+        require(metadataBytes.size.toLong() <= limits.maxCommitMetadataBytes) {
+            "Personalization commit metadata exceeds ${limits.maxCommitMetadataBytes} bytes."
+        }
 
         val staging = File(stagingDirectory, UUID.randomUUID().toString())
         val destination = File(generationsDirectory, generationId)
@@ -499,7 +519,6 @@ class TransactionalPersonalizationStore(
         try {
             writeSynced(File(staging, STORE_DATA_FILE_NAME), dataBytes)
             writeSynced(File(staging, STORE_COMMIT_FILE_NAME), metadataBytes)
-
             if (destination.exists()) {
                 val existing = loadGenerationLocked(destination)
                 if (existing != null && existing.generation.dataSha256 == dataHash) return existing
@@ -516,10 +535,13 @@ class TransactionalPersonalizationStore(
     }
 
     private fun nextGenerationNumberLocked(): Long {
-        val highest = generationDirectoriesDescending()
-            .mapNotNull(::generationNumberFromDirectory)
-            .maxOrNull()
-            ?: 0L
+        val parsed = generationDirectoriesDescending().map { directory ->
+            generationNumberFromDirectory(directory)
+                ?: throw IllegalStateException(
+                    "Generation directory '${directory.name}' cannot be represented safely.",
+                )
+        }
+        val highest = parsed.maxOrNull() ?: 0L
         if (highest == Long.MAX_VALUE) {
             throw IllegalStateException("Personalization generation counter is exhausted.")
         }
@@ -545,6 +567,11 @@ class TransactionalPersonalizationStore(
     }
 
     private fun ensureDirectories() {
+        require(limits.maxDataBytes > 0L) { "maxDataBytes must be positive." }
+        require(limits.maxCommitMetadataBytes > 0L) {
+            "maxCommitMetadataBytes must be positive."
+        }
+        require(limits.maxJournalChanges > 0) { "maxJournalChanges must be positive." }
         if (!rootDirectory.isDirectory && !rootDirectory.mkdirs()) {
             throw IllegalStateException("Could not create personalization store directory.")
         }
@@ -578,9 +605,7 @@ class TransactionalPersonalizationStore(
             val canonicalLockFile = File(canonicalRoot, STORE_LOCK_FILE_NAME)
             RandomAccessFile(canonicalLockFile, "rw").use { randomAccessFile ->
                 randomAccessFile.channel.use { channel ->
-                    channel.lock().use {
-                        block()
-                    }
+                    channel.lock().use { block() }
                 }
             }
         }
