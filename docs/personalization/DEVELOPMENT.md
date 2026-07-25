@@ -43,17 +43,32 @@ This document tracks the implementation boundary for inspectable and editable pe
 - a deeply immutable, pre-indexed runtime snapshot;
 - atomic store-to-runtime activation through `PersonalizationSourceController`;
 - retention of the previous runtime when compilation of a committed generation fails;
+- conservative and idempotent migration of Android personal-dictionary words into the separate
+  experimental store;
+- tombstone protection and conflict reporting during repeated migration;
+- a Developer store screen showing migration preview, recovery issues, and immutable generations;
+- a debug-only personalization shadow mode with:
+  - observation of non-swipe production dictionary candidates;
+  - no candidate mutation or production decision changes;
+  - a bounded single-thread background worker and queue-drop accounting;
+  - a bounded in-memory event ring;
+  - per-process salted word fingerprints instead of retained text;
+  - manual, learned-word, pin, preference, and block-rule findings;
+  - a Developer status and event console;
 - instrumentation tests for codecs, validation, archives, merge behavior, edit behavior, snapshots,
-  store transactions, recovery, rollback, runtime indexing, activation, deterministic IDs, and
-  legacy mapping;
+  store transactions, recovery, rollback, runtime indexing, activation, migration, shadow evaluation,
+  deterministic IDs, and legacy mapping;
 - a draft pull request used as the long-running CI and review channel;
 - successful CI compilation of `unstableDebug`, the Android test APK, Kotlin, Java, JNI, and NDK;
 - successful portable-tool tests on Windows and Ubuntu with Python 3.11 and 3.13.
 
-The transactional store contract is documented in:
+The main implementation contracts are documented in:
 
 ```text
+docs/personalization/README.md
 docs/personalization/STORE.md
+docs/personalization/MIGRATION.md
+docs/personalization/SHADOW_MODE.md
 ```
 
 ## Existing storage sources
@@ -62,9 +77,11 @@ docs/personalization/STORE.md
 
 Manual words are stored through Android's `UserDictionary` provider. The current FUTO settings UI can already add, edit, remove, import, and list these records.
 
-The new inventory reader can migrate them without direct access to private dictionary files. Original creation and modification timestamps are unavailable, so the migration time is recorded and the source is marked `migrated-android-user-dictionary`.
+The inventory reader migrates them without direct access to private dictionary files. Original creation and modification timestamps are unavailable, so the migration time is recorded and the source is marked `migrated-android-user-dictionary`.
 
 The legacy `appId` field is not included in portable data because app-specific scope is privacy-sensitive and the numeric value is not portable across devices.
+
+The migration writes only to the experimental source store. Android's provider remains authoritative for production typing.
 
 ### User-history dictionaries
 
@@ -122,6 +139,14 @@ The runtime snapshot is a deeply immutable and pre-indexed copy of one committed
 
 If runtime compilation fails after persistence, the previous runtime remains active and the committed generation can be compiled again later.
 
+## Shadow-mode boundary
+
+The production dictionary path remains authoritative. Shadow mode receives a bounded copy of non-swipe `SuggestionResults` and evaluates it against one immutable experimental runtime snapshot on a background thread.
+
+It does not retain words, previous-word context, application IDs, touch coordinates, or sentence text. Completed events contain process-local salted fingerprints, lengths, counts, source types, rule findings, generation identity, and evaluation latency.
+
+The same production `SuggestionResults` instance continues into the existing FUTO transformation and autocorrection logic. No shadow finding currently suppresses, promotes, adds, or removes a candidate.
+
 ## Merge policy boundary
 
 The current merge planner automatically resolves only unambiguous cases:
@@ -145,24 +170,26 @@ Observation counts from two different record IDs are not added automatically. Th
 ## Not yet connected to production learning
 
 - no existing user-history file is rewritten;
-- no portable record is used for live suggestions;
+- no portable record changes a visible suggestion or autocorrection;
 - edit plans are not applied to current runtime dictionaries;
-- the new source controller is not connected to the production suggestion pipeline;
-- no `do-not-learn` or correction rule affects typing yet;
+- no `do-not-learn`, pin, preference, or correction-block rule affects typing;
 - no personal export is written to user-selected storage;
 - no import modifies local personal data;
-- no normal settings UI lists automatic history records yet;
-- instrumentation tests are compiled in CI but have not yet been executed on a real device or emulator.
+- no normal settings UI lists automatic history records;
+- instrumentation tests are compiled in CI but have not yet been executed on a real device or emulator;
+- shadow events are diagnostic in-memory data and not a stable report format.
 
 ## Next implementation steps
 
-1. create a migration plan from manual Android personal words into a separate experimental store;
-2. expose source-store generations and recovery status in a Developer-only screen;
-3. compile the experimental runtime snapshot beside the current dictionaries;
-4. compare current and new personalization decisions in shadow mode;
-5. define parity and rollback acceptance thresholds;
-6. add normal in-app search and transactional application of forget, never-learn, pin, and
-   pair-block actions only after shadow-mode validation;
-7. add user-selected `.futopersonal` export and preview-only import;
-8. add confirmed import with rollback;
-9. implement bulk editing in the separate Model Studio repository.
+1. compile the current shadow implementation and Android test APK in CI;
+2. execute instrumentation tests on an emulator and at least one real device;
+3. measure typing-thread overhead, background evaluation latency, queue drops, and memory use;
+4. define a versioned privacy-reviewed shadow report with aggregate statistics and no raw text;
+5. validate a conservative mapping from legacy user-history evidence into portable learned records;
+6. collect enough shadow evidence to define manual-word, learned-word, and rule parity thresholds;
+7. add normal in-app search and transactional application of forget, never-learn, pin, and
+   pair-block actions only after those thresholds pass;
+8. add user-selected `.futopersonal` export and preview-only import;
+9. add confirmed import with rollback;
+10. start the separate Model Studio repository once package, benchmark, personalization, and
+    report contracts are stable enough to consume without Android-internal assumptions.
