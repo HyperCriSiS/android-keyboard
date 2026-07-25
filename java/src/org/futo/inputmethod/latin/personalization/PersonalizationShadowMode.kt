@@ -42,8 +42,8 @@ data class PersonalizationShadowFingerprint(
 enum class PersonalizationShadowFinding {
     ManualPrefixCandidateMissing,
     PinnedTypedWordMissing,
-    BlockedCorrectionVisible,
-    BlockedCorrectionRankedFirst,
+    BlockedSuggestionVisible,
+    BlockedAutocorrectCandidateRankedFirst,
     PreferredCorrectionMissing,
     LearnedTypedWordMissing,
 }
@@ -62,7 +62,8 @@ data class PersonalizationShadowEvent(
     val learnedTypedWordPresent: Boolean,
     val productionHistoryTypedWordVisible: Boolean,
     val wordRuleAction: WordRuleAction?,
-    val blockedCorrectionCount: Int,
+    val blockedSuggestionCount: Int,
+    val blockedAutocorrectCandidateCount: Int,
     val preferredCorrectionCount: Int,
     val findings: Set<PersonalizationShadowFinding>,
     val evaluationMicros: Long,
@@ -93,8 +94,7 @@ object PersonalizationShadowEvaluator {
         val locale = canonicalLocale(observation.locale)
         val typedKey = normalizeShadowText(observation.typedWord)
         val candidates = observation.candidates.take(MAX_SHADOW_CANDIDATES)
-        val candidateKeys = candidates.map { normalizeShadowText(it.word) }
-        val candidateKeySet = candidateKeys.toSet()
+        val candidateKeySet = candidates.mapTo(linkedSetOf()) { normalizeShadowText(it.word) }
 
         val manualPrefixMatches = runtime.findManualWords(
             locale = locale,
@@ -118,16 +118,23 @@ object PersonalizationShadowEvaluator {
                 appScope = null,
             )?.action?.let { candidate to it }
         }
-        val blockedCorrections = correctionActions.filter {
-            it.second == CorrectionRuleAction.BlockAutocorrect ||
-                it.second == CorrectionRuleAction.BlockSuggestion
+        val blockedSuggestions = correctionActions.filter {
+            it.second == CorrectionRuleAction.BlockSuggestion
         }
-        val preferredRules = runtime.correctionRules.filter {
-            canonicalLocale(it.locale) == locale &&
+        val blockedAutocorrectCandidates = correctionActions.filter {
+            it.second == CorrectionRuleAction.BlockAutocorrect
+        }
+        val preferredRules = runtime.correctionRules
+            .asSequence()
+            .filter {
                 it.appScope == null &&
-                normalizeShadowText(it.typed) == typedKey &&
-                it.action == CorrectionRuleAction.Prefer
-        }
+                    normalizeShadowText(it.typed) == typedKey &&
+                    it.action == CorrectionRuleAction.Prefer &&
+                    (it.locale == null || canonicalLocale(it.locale) == locale)
+            }
+            .sortedByDescending { it.locale != null }
+            .distinctBy { normalizeShadowText(it.replacement) }
+            .toList()
         val missingPreferred = preferredRules.count {
             normalizeShadowText(it.replacement) !in candidateKeySet
         }
@@ -139,11 +146,11 @@ object PersonalizationShadowEvaluator {
         if (wordRule?.action == WordRuleAction.Pin && typedKey !in candidateKeySet) {
             findings += PersonalizationShadowFinding.PinnedTypedWordMissing
         }
-        if (blockedCorrections.isNotEmpty()) {
-            findings += PersonalizationShadowFinding.BlockedCorrectionVisible
+        if (blockedSuggestions.isNotEmpty()) {
+            findings += PersonalizationShadowFinding.BlockedSuggestionVisible
         }
-        if (blockedCorrections.any { it.first.rank == 0 }) {
-            findings += PersonalizationShadowFinding.BlockedCorrectionRankedFirst
+        if (blockedAutocorrectCandidates.any { it.first.rank == 0 }) {
+            findings += PersonalizationShadowFinding.BlockedAutocorrectCandidateRankedFirst
         }
         if (missingPreferred > 0) {
             findings += PersonalizationShadowFinding.PreferredCorrectionMissing
@@ -167,7 +174,8 @@ object PersonalizationShadowEvaluator {
             learnedTypedWordPresent = learnedTypedWord != null,
             productionHistoryTypedWordVisible = historyTypedWordVisible,
             wordRuleAction = wordRule?.action,
-            blockedCorrectionCount = blockedCorrections.size,
+            blockedSuggestionCount = blockedSuggestions.size,
+            blockedAutocorrectCandidateCount = blockedAutocorrectCandidates.size,
             preferredCorrectionCount = preferredRules.size,
             findings = findings.toSet(),
             evaluationMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - started),
