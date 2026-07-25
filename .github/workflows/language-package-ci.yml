@@ -55,7 +55,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: language-personalization-ci-${{ github.ref }}
+  group: language-personalization-ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
