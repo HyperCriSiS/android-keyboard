@@ -49,7 +49,6 @@ jobs:
       BRANCH_NAME: "dev"
       AVD_NAME: personalization-api35
       SYSTEM_IMAGE: system-images;android-35;default;x86_64
-      ANDROID_AVD_HOME: ${{ runner.temp }}/android-avd
 
     steps:
       - name: Check out repository
@@ -69,11 +68,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Prepare diagnostic directory
+      - name: Prepare diagnostic and AVD directories
+        shell: bash
         run: |
-          mkdir -p build/device-test-diagnostics "$ANDROID_AVD_HOME"
+          avd_home="$RUNNER_TEMP/android-avd"
+          echo "ANDROID_AVD_HOME=$avd_home" >> "$GITHUB_ENV"
+          mkdir -p build/device-test-diagnostics "$avd_home"
           printf 'workflow=%s\ncommit=%s\navdHome=%s\n' \
-            '${{ github.workflow }}' '${{ github.sha }}' "$ANDROID_AVD_HOME" \
+            '${{ github.workflow }}' '${{ github.sha }}' "$avd_home" \
             > build/device-test-diagnostics/workflow.txt
 
       - name: Enable KVM access
@@ -102,7 +104,7 @@ jobs:
             --device "pixel_2" \
             > build/device-test-diagnostics/avdmanager.log 2>&1
           avdmanager list avd >> build/device-test-diagnostics/avdmanager.log 2>&1
-          find "$ANDROID_AVD_HOME" -maxdepth 2 -type f -o -type d \
+          find "$ANDROID_AVD_HOME" -maxdepth 2 \( -type f -o -type d \) \
             >> build/device-test-diagnostics/avdmanager.log 2>&1
 
       - name: Start emulator
