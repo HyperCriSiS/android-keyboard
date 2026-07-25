@@ -171,6 +171,12 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
                 style = NavigationItemStyle.Misc,
                 navigate = { navController.navigate("devpersonalizationinventory") },
             )
+            NavigationItem(
+                title = "Personalization export preview",
+                subtitle = "Build and validate an in-memory manual-word .futopersonal archive",
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("devpersonalizationexportpreview") },
+            )
         }
 
         SettingToggleDataStore(
