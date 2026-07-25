@@ -1,0 +1,102 @@
+name: Personalization device tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/personalization-device-tests.yml"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "common/src/**"
+      - "java/src/org/futo/inputmethod/latin/ExpandableBinaryDictionarySnapshotReader.java"
+      - "java/src/org/futo/inputmethod/latin/Suggest.java"
+      - "java/src/org/futo/inputmethod/latin/personalization/**"
+      - "tests/src/org/futo/inputmethod/latin/personalization/**"
+      - "tests/src/org/futo/inputmethod/latin/ExpandableBinaryDictionarySnapshotReaderTest.java"
+      - "native/jni/**"
+  pull_request:
+    paths:
+      - ".github/workflows/personalization-device-tests.yml"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "common/src/**"
+      - "java/src/org/futo/inputmethod/latin/ExpandableBinaryDictionarySnapshotReader.java"
+      - "java/src/org/futo/inputmethod/latin/Suggest.java"
+      - "java/src/org/futo/inputmethod/latin/personalization/**"
+      - "tests/src/org/futo/inputmethod/latin/personalization/**"
+      - "tests/src/org/futo/inputmethod/latin/ExpandableBinaryDictionarySnapshotReaderTest.java"
+      - "native/jni/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personalization-device-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  instrumentation:
+    name: Run personalization tests on API 35
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      VERSION_CODE: "1"
+      VERSION_NAME: "0.0.0-ci"
+      BRANCH_NAME: "dev"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run personalization instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          disk-size: 6000M
+          heap-size: 1024M
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+            -camera-back none -camera-front none -no-snapshot-save
+          script: |
+            chmod +x gradlew
+            ./gradlew connectedUnstableDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.package=org.futo.inputmethod.latin.personalization \
+              --stacktrace \
+              --no-daemon
+
+      - name: Upload instrumentation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: personalization-instrumentation-reports
+          path: |
+            build/reports/androidTests/connected/**
+            build/outputs/androidTest-results/connected/**
+          if-no-files-found: warn
+          retention-days: 14
