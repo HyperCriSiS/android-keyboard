@@ -24,6 +24,7 @@ import static org.futo.inputmethod.latin.define.DecoderSpecificConstants.SHOULD_
 
 import org.futo.inputmethod.keyboard.Keyboard;
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
+import org.futo.inputmethod.latin.common.ComposedData;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.StringUtils;
 import org.futo.inputmethod.latin.define.DebugFlags;
@@ -329,12 +330,15 @@ public final class Suggest {
             final SettingsValuesForSuggestion settingsValuesForSuggestion,
             final int inputStyleIfNotPrediction, final boolean isCorrectionEnabled,
             final int sequenceNumber, final OnGetSuggestedWordsCallback callback) {
+        final ComposedData composedData = wordComposer.getComposedDataSnapshot();
         final SuggestionResults suggestionResults = mDictionaryFacilitator.getSuggestionResults(
-                wordComposer.getComposedDataSnapshot(), ngramContext, keyboard,
-                settingsValuesForSuggestion, SESSION_ID_TYPING, inputStyleIfNotPrediction);
+                composedData, ngramContext, keyboard, settingsValuesForSuggestion,
+                SESSION_ID_TYPING, inputStyleIfNotPrediction);
         final Locale locale = mDictionaryFacilitator.getPrimaryLocale();
-        PersonalizationShadowMode.observe(locale, wordComposer.getComposedDataSnapshot(),
-                suggestionResults, inputStyleIfNotPrediction, SESSION_ID_TYPING);
+        if (PersonalizationShadowMode.isEnabled()) {
+            PersonalizationShadowMode.observe(locale, composedData, suggestionResults,
+                    inputStyleIfNotPrediction, SESSION_ID_TYPING);
+        }
 
         callback.onGetSuggestedWords(
             obtainNonBatchedInputSuggestedWords(wordComposer, inputStyleIfNotPrediction,
@@ -446,7 +450,7 @@ public final class Suggest {
      * auto-correction when the suggestion is long and contains a space, which should avoid the
      * worst damage.
      * This function is implementing that filter. If the language enforces no such limit, then it
-     * always returns true. If the suggestion contains no space, it also returns true. Otherwise,
+     * always returns true. If the suggestion contains no space, it also always returns true. Otherwise,
      * it checks the length against the language-specific limit.
      *
      * @param info the suggestion info
