@@ -199,6 +199,7 @@ object PersonalizationShadowMode {
     private val applicationContext = AtomicReference<Context?>(null)
     private val runtime = AtomicReference<PersonalizationRuntimeSnapshot?>(null)
     private val events = ArrayDeque<PersonalizationShadowEvent>(MAX_EVENTS)
+    private val reportAccumulator = PersonalizationShadowReportAccumulator()
     private val salt = ByteArray(32).also(SecureRandom()::nextBytes)
     private val observed = AtomicLong(0)
     private val dropped = AtomicLong(0)
@@ -316,6 +317,7 @@ object PersonalizationShadowMode {
                     observation = observation,
                     fingerprinter = ::fingerprint,
                 )
+                reportAccumulator.record(event)
                 synchronized(events) {
                     if (events.size >= MAX_EVENTS) events.removeFirst()
                     events.addLast(event)
@@ -331,6 +333,7 @@ object PersonalizationShadowMode {
     @JvmStatic
     fun clearEvents() {
         synchronized(events) { events.clear() }
+        reportAccumulator.reset()
         observed.set(0)
         dropped.set(0)
         skippedWithoutRuntime.set(0)
@@ -352,6 +355,29 @@ object PersonalizationShadowMode {
             recentEvents = synchronized(events) { events.toList().asReversed() },
         )
     }
+
+    fun aggregateReport(
+        generatedAt: Long = System.currentTimeMillis(),
+    ): PersonalizationShadowReport {
+        val activeRuntime = runtime.get()
+        val retainedEvents = synchronized(events) { events.size }
+        return reportAccumulator.build(
+            generatedAt = generatedAt,
+            currentRuntime = activeRuntime?.let {
+                PersonalizationShadowReportRuntime(
+                    generationId = it.generationId,
+                    dataSha256 = it.dataSha256,
+                )
+            },
+            droppedQueueItems = dropped.get(),
+            skippedWithoutRuntime = skippedWithoutRuntime.get(),
+            retainedRecentEvents = retainedEvents,
+        )
+    }
+
+    fun aggregateReportJson(
+        generatedAt: Long = System.currentTimeMillis(),
+    ): String = PersonalizationShadowReportCodec.encode(aggregateReport(generatedAt))
 
     private fun fingerprint(value: String): PersonalizationShadowFingerprint {
         val normalized = normalizeShadowText(value)
