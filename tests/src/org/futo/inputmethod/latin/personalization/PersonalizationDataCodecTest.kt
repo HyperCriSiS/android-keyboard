@@ -4,6 +4,7 @@ import androidx.test.filters.SmallTest
 import androidx.test.runner.AndroidJUnit4
 import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -81,5 +82,28 @@ class PersonalizationDataCodecTest {
 
         assertEquals(data, decodedData)
         assertEquals(manifest, decodedManifest)
+    }
+
+    @Test
+    fun encoderWritesFieldsRequiredByNormativeSchemas() {
+        val data = PersonalizationDataSet(formatVersion = PERSONALIZATION_FORMAT_VERSION)
+        val dataBytes = PersonalizationDataCodec.encodeData(data).toByteArray(Charsets.UTF_8)
+        val manifest = PersonalizationTestFixtures.validManifest(data, dataBytes)
+        val encodedData = dataBytes.toString(Charsets.UTF_8)
+        val encodedManifest = PersonalizationDataCodec.encodeManifest(manifest)
+
+        listOf(
+            "\"manualWords\": []",
+            "\"learnedWords\": []",
+            "\"learnedNgrams\": []",
+            "\"wordRules\": []",
+            "\"correctionRules\": []",
+            "\"tombstones\": []",
+        ).forEach { requiredField ->
+            assertTrue("Missing required data field $requiredField", encodedData.contains(requiredField))
+        }
+        assertTrue(encodedManifest.contains("\"path\": \"data.json\""))
+        assertTrue(encodedManifest.contains("\"mediaType\": \"$PERSONALIZATION_DATA_MEDIA_TYPE\""))
+        assertTrue(encodedManifest.contains("\"containsSentenceText\": false"))
     }
 }
