@@ -198,8 +198,8 @@ jobs:
             personalization-load-report.json \
             personalization-shadow-queue-report.json; do
             target="build/device-test-diagnostics/$report_name"
-            if adb exec-out run-as org.futo.inputmethod.latin.unstable \
-              cat "cache/$report_name" > "$target" 2>/dev/null; then
+            if adb pull "/data/local/tmp/$report_name" "$target" >/dev/null 2>&1; then
+              adb shell rm -f "/data/local/tmp/$report_name" || true
               if [ ! -s "$target" ]; then
                 rm -f "$target"
                 missing=1
