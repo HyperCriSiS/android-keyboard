@@ -12,6 +12,7 @@ object PersonalizationDataCodec {
         ignoreUnknownKeys = false
         isLenient = false
         prettyPrint = true
+        encodeDefaults = true
     }
 
     fun decodeManifest(source: String): PersonalizationExportManifest {
