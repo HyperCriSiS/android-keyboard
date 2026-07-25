@@ -25,11 +25,13 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import org.futo.inputmethod.latin.personalization.PersonalizationShadowEvent
 import org.futo.inputmethod.latin.personalization.PersonalizationShadowFinding
 import org.futo.inputmethod.latin.personalization.PersonalizationShadowMode
+import org.futo.inputmethod.latin.personalization.PersonalizationShadowReport
 import org.futo.inputmethod.latin.personalization.PersonalizationShadowSnapshot
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 
@@ -39,6 +41,7 @@ fun DevPersonalizationShadowModeScreen(
 ) {
     val context = LocalContext.current
     var snapshot by remember { mutableStateOf(PersonalizationShadowMode.snapshot()) }
+    var aggregateReport by remember { mutableStateOf<PersonalizationShadowReport?>(null) }
 
     LaunchedEffect(Unit) {
         PersonalizationShadowMode.configure(context.applicationContext)
@@ -62,33 +65,43 @@ fun DevPersonalizationShadowModeScreen(
             )
         }
         item {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(
-                    onClick = {
-                        PersonalizationShadowMode.setEnabled(!snapshot.enabled)
-                        snapshot = PersonalizationShadowMode.snapshot()
-                    },
-                ) {
-                    Text(if (snapshot.enabled) "Disable" else "Enable")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            PersonalizationShadowMode.setEnabled(!snapshot.enabled)
+                            snapshot = PersonalizationShadowMode.snapshot()
+                        },
+                    ) {
+                        Text(if (snapshot.enabled) "Disable" else "Enable")
+                    }
+                    Button(
+                        onClick = {
+                            PersonalizationShadowMode.refreshAsync()
+                            snapshot = PersonalizationShadowMode.snapshot()
+                        },
+                    ) {
+                        Text("Reload runtime")
+                    }
+                    Button(
+                        onClick = {
+                            PersonalizationShadowMode.clearEvents()
+                            snapshot = PersonalizationShadowMode.snapshot()
+                            aggregateReport = null
+                        },
+                    ) {
+                        Text("Clear")
+                    }
                 }
                 Button(
                     onClick = {
-                        PersonalizationShadowMode.refreshAsync()
-                        snapshot = PersonalizationShadowMode.snapshot()
+                        aggregateReport = PersonalizationShadowMode.aggregateReport()
                     },
                 ) {
-                    Text("Reload runtime")
-                }
-                Button(
-                    onClick = {
-                        PersonalizationShadowMode.clearEvents()
-                        snapshot = PersonalizationShadowMode.snapshot()
-                    },
-                ) {
-                    Text("Clear")
+                    Text("Build aggregate report")
                 }
             }
         }
@@ -117,6 +130,50 @@ fun DevPersonalizationShadowModeScreen(
                     finding.name,
                     (snapshot.findings[finding] ?: 0L).toString(),
                     isError = (snapshot.findings[finding] ?: 0L) > 0,
+                )
+            }
+        }
+
+        aggregateReport?.let { report ->
+            item {
+                ShadowSection("Aggregate report preview")
+                Text(
+                    "This versioned report exists only in memory. It contains aggregate counters " +
+                        "and no words, fingerprints, sentence context, application scopes, or " +
+                        "persistent user identifiers.",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+                ShadowValue("Format version", report.formatVersion)
+                ShadowValue("Generated", formatShadowTime(report.generatedAt))
+                ShadowValue("Evaluated events", report.counters.evaluatedEvents.toString())
+                ShadowValue("Queue drop rate", formatShadowRate(report.counters.queueDropRate))
+                ShadowValue(
+                    "Average candidates",
+                    String.format(Locale.ROOT, "%.2f", report.candidateStats.averageCandidates),
+                )
+                ShadowValue(
+                    "Manual prefix visibility",
+                    formatShadowRate(report.candidateStats.manualPrefixVisibilityRate),
+                )
+                ShadowValue(
+                    "Learned history visibility",
+                    formatShadowRate(report.candidateStats.learnedHistoryVisibilityRate),
+                )
+                ShadowValue(
+                    "Evaluation latency",
+                    String.format(
+                        Locale.ROOT,
+                        "average %.2f µs · maximum %d µs",
+                        report.latency.averageMicros,
+                        report.latency.maximumMicros,
+                    ),
+                )
+                ShadowValue(
+                    "Contains fingerprints",
+                    report.privacy.containsFingerprints.toString(),
+                    isError = report.privacy.containsFingerprints,
                 )
             }
         }
@@ -199,3 +256,9 @@ private fun ShadowValue(label: String, value: String, isError: Boolean = false) 
 private fun formatShadowTime(timestamp: Long): String = DateFormat
     .getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM)
     .format(Date(timestamp))
+
+private fun formatShadowRate(rate: Double): String = String.format(
+    Locale.ROOT,
+    "%.2f%%",
+    rate * 100.0,
+)
