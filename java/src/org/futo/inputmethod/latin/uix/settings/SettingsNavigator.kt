@@ -199,7 +199,7 @@ fun SettingsNavigator(
             composable("exportingcfg") { ExportingMenu(navController) }
             composable("kasroz") { KASROZMenu() }
             dialog("update") { UpdateDialog(navController = navController) }
-            dialog("alreadyPaid") { AlreadyPaidDialog(navController) }
+            dialog("alreadyPaid") { AlreadyPaidDialog(navController = navController) }
             dialog("customThemeDialog") { CustomThemeDialog(navController = navController) }
             addModelManagerNavigation(navController)
         }
