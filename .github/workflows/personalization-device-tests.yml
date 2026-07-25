@@ -35,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: personalization-device-tests-${{ github.ref }}
+  group: personalization-device-tests-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
